@@ -211,8 +211,8 @@ print("\n-- no ground-truth leakage --")
 from memgate.types import Turn
 
 
-def _tier_fingerprint(ts):
-    p = MemGatePolicy()
+def _tier_fingerprint(ts, **kw):
+    p = MemGatePolicy(**kw)
     for t in ts:
         p.observe(t)
     return ([i.text for i in p.store.short],
@@ -224,6 +224,70 @@ blind = [Turn(t.session, t.index, t.speaker, t.text) for t in turns]
 check("routing is invariant to ground-truth labels",
       _tier_fingerprint(turns) == _tier_fingerprint(blind),
       "a policy decision is reading fact_id/is_filler")
+
+# The storage budget added two more decision points that could read the answer
+# key -- which item to EVICT and which to DEMOTE -- so the same invariant has to
+# hold with the cap engaged, in both write modes. Eviction ranks on `utility`
+# and recency only (store._forget_key).
+for _mode in ("threshold", "adaptive"):
+    check(f"eviction under a storage budget is label-blind ({_mode})",
+          _tier_fingerprint(turns, store_budget=600, write_mode=_mode)
+          == _tier_fingerprint(blind, store_budget=600, write_mode=_mode),
+          "an eviction or demotion decision is reading fact_id/is_filler")
+
+print("\n-- storage budget --")
+# §22.3: the experiment capped the CONTEXT but never the STORE, so "keep
+# everything and retrieve" was charged nothing for holding the whole
+# conversation and forgetting could only ever lose. These pin the cap itself.
+from memgate.policies import (SlidingWindowPolicy, RAGPolicy,
+                              MemGateAdaptivePolicy)
+
+for _name, _F in [("P0", SlidingWindowPolicy), ("RAG", RAGPolicy),
+                  ("P1", MemGatePolicy), ("P1-A", MemGateAdaptivePolicy)]:
+    _worst = []
+    for _S in (256, 512, 1024, 2048):
+        _p = _F(budget=1024, store_budget=_S)
+        for _t in turns:
+            _p.observe(_t)
+        _worst.append((_S, _p.stored_tokens()))
+    check(f"{_name} never exceeds its storage budget",
+          all(v <= _S for _S, v in _worst),
+          f"held more than allowed: {_worst}")
+
+# A storage budget must actually BITE, or the sweep is measuring nothing. The
+# unconstrained store holds the whole conversation; a capped one cannot.
+_free = MemGateAdaptivePolicy(budget=1024, store_budget=None)
+_tight = MemGateAdaptivePolicy(budget=1024, store_budget=512)
+for _t in turns:
+    _free.observe(_t)
+    _tight.observe(_t)
+check("a tight storage budget forces real loss",
+      _tight.stored_tokens() < _free.stored_tokens(),
+      f"tight={_tight.stored_tokens()} free={_free.stored_tokens()}")
+
+# Sub-threshold items are dropped at ingest in threshold mode. With a storage
+# budget that is waste while the store still has room, so `fill_store` keeps
+# them instead and lets eviction decide later. It never fires on LoCoMo (whose
+# turns all clear tau_low) but does on the synthetic set, so it is pinned here.
+_drop = MemGatePolicy(budget=800, store_budget=1200, fill_store=None)
+_fill = MemGatePolicy(budget=800, store_budget=1200, fill_store="long")
+for _t in turns:
+    _drop.observe(_t)
+    _fill.observe(_t)
+check("fill_store keeps sub-threshold turns while the store has room",
+      _fill.routed["filled"] > 0 and _drop.routed["dropped"] > 0
+      and _fill.stored_tokens() > _drop.stored_tokens(),
+      f"fill={_fill.routed} {_fill.stored_tokens()} "
+      f"drop={_drop.routed} {_drop.stored_tokens()}")
+
+# Adaptive mode's whole claim is that the compression RATE follows storage
+# pressure. With room to spare nothing should be demoted at all.
+check("adaptive mode compresses nothing when storage is free",
+      _free.store.stats()["demoted"] == 0,
+      f"demoted {_free.store.stats()['demoted']} with an unbounded store")
+check("adaptive mode compresses under pressure",
+      _tight.store.stats()["demoted"] > 0,
+      "storage pressure did not trigger any demotion")
 
 print("\n-- reproducibility --")
 a = run_policy(MemGatePolicy(), turns, questions, 800)

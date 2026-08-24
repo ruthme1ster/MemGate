@@ -21,6 +21,7 @@ Selection (env var, default "auto" = prefer real, fall back quietly):
 import os
 import re
 import sys as _sys
+from functools import lru_cache as _lru_cache
 import zlib
 import math
 from typing import List, Sequence
@@ -86,6 +87,7 @@ def _get_tiktoken():
     return _tiktoken_enc
 
 
+@_lru_cache(maxsize=1 << 17)
 def count_tokens(text: str) -> int:
     """Token count for budget accounting.
 
@@ -93,6 +95,10 @@ def count_tokens(text: str) -> int:
     every cost claim -- so a biased tokenizer biases every result. The x1.3
     heuristic approximates sub-word splitting for English; tiktoken is exact
     for GPT-family models.
+
+    Memoised because it is a pure function of the text and the storage budget
+    (§22.3) re-counts the same held items on every write. Without the cache
+    that turns each ingest into an O(n) re-encode and the sweep into O(n^2).
     """
     if not text:
         return 0

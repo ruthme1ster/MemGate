@@ -2,7 +2,7 @@
 
 **Capstone Project** · SVKM's NMIMS, Indore Campus
 Simar Singh Khanuja & Yash Ramchandani
-Session 1: 12 August 2026 · Session 2: 17 August 2026
+Session 1: 12 August 2026 · Session 2: 17 August 2026 · Session 3: 24 August 2026
 
 A complete record of what was discussed, decided, built and found in these
 working sessions. Written so it can be picked up cold later.
@@ -23,6 +23,21 @@ working sessions. Written so it can be picked up cold later.
 >
 > The leak is fixed, pinned by a regression test, and the project now has real
 > LoCoMo numbers. Full detail in **§13**.
+>
+> ## ⚠ ALSO READ — Session 3 changed the headline claim
+>
+> §22 concluded that the compression machinery was a **net loss** against
+> simply keeping everything and retrieving. Session 3 imposed the missing
+> **storage budget** and re-ran it. The corrected finding:
+>
+> * **Selection wins.** Forgetting by scored utility rather than oldest-first
+>   is worth **+8.7 answer-recall points** at identical storage and identical
+>   fidelity — that gap is the decision policy and nothing else.
+> * **Compression still loses.** Compressing on eviction wins *evidence*
+>   recall and loses *answer* recall, because a gist keeps the ids of a turn
+>   whose text it discarded.
+>
+> Do not present tiered compression as validated. Full detail in **§23**.
 
 ---
 
@@ -979,3 +994,248 @@ MEMGATE_EMBEDDER=hash python3 run_locomo.py    # embedder ablation
 ```
 
 Data: `data/locomo/locomo10.json` (2.7 MB, from `snap-research/locomo`).
+
+---
+
+# Session 3 — 24 August 2026
+
+## 23. The storage budget — and what it says about compression
+
+§22.3 ended with the project's own ablation showing the compression machinery
+to be a **net loss** against simply keeping everything and retrieving, and
+located the cause precisely: the experiment constrained the **context** but
+never the **store**. Full-context was charged 18 959 tokens per query while
+"store everything and retrieve top-k" was charged *nothing* for holding all 419
+turns. Under that accounting forgetting can only lose information — there is no
+budget it saves — so compression cannot pay for itself and the ablation was
+right to say so.
+
+This session imposes the missing constraint and re-asks the question.
+
+### 23.1 What was built
+
+* **`store_budget` (S)** — a cap on total tokens held across all three tiers,
+  enforced on every write (`ThreeTierStore.enforce_store_budget`). Cheapest
+  loss first: reclaim superseded records → demote the lowest-utility Tier 3
+  fact to a Tier 2 gist → drop from Tier 2. Tier 1 is never evicted.
+* **`stored_tokens()`** on every policy, recorded in every results row, so
+  accuracy per **stored** token is reportable alongside accuracy per context
+  token.
+* **`RAG store-all`** — §22.2's "keep everything and retrieve" configuration
+  promoted from a footnote to a first-class baseline, because it is the thing
+  compression has to beat. FIFO eviction under the cap: it has no scorer, which
+  is the point.
+* **Two new MemGate variants** (defaults untouched, so every §15–§22 number
+  still reproduces exactly — verified):
+  * **P1-A adaptive** — store verbatim while there is room; **compress on
+    eviction**, so the compression rate follows storage pressure instead of
+    being fixed at ingest.
+  * **P1-S select** — identical, except an evicted item is **dropped rather
+    than compressed**.
+* **`run_storage_sweep.py`**, and `--store-budget` / `--adaptive` on
+  `run_ablations.py` so the whole §22 battery re-runs under the corrected
+  accounting.
+
+The three retention regimes isolate one variable each at a fixed store size S:
+
+| comparison | held constant | varies |
+|---|---|---|
+| P0 vs RAG | retention (same turns, same size) | **read path** — recency vs retrieval |
+| RAG vs P1-S | storage, fidelity, retrieval | **which turns are forgotten** |
+| P1-S vs P1-A | storage, selection | **fidelity** — drop vs compress |
+
+### 23.2 Two under-fill bugs, both the §13.5 strawman pointed the other way
+
+The first sweep showed MemGate **flatlining at 2148 stored tokens on a
+16 384-token allowance** — it lost at every large S while refusing to use 87% of
+the storage it was given. Same class of defect as §13.5, where MemGate could
+not fill the *context* it was allowed; here it could not fill the *store*.
+
+1. **Tier 2 was sized from the context budget**, not the store
+   (`budget × split × 2` = 1024), so no storage allowance could make it grow.
+2. **Tier 2 is not query-addressable.** Routing sends 399 of 413 items there,
+   but Tier 2 is read *positionally* — packed by density — never ranked against
+   the question. Only Tier 3 is retrievable, and it held 14 items.
+
+(2) is the more interesting one, and it produced the session's sharpest
+diagnostic: enlarging Tier 2 alone made recall **worse** (24.2% → 12.1% at
+S=16 384). More stored, none of it reachable. **Stored content that is not
+addressable earns nothing**, and a storage budget spent on it is worse than
+wasted. Tier 2 items already carried embeddings, so making them retrievable
+cost only the ranking.
+
+A third, deeper limit remained: threshold mode compresses every turn to a
+~14-word gist *on the way in*, so it cannot hold more than ~4735 tokens of a
+19K conversation however large the budget. The compression rate was fixed in
+advance rather than adapted to pressure — which is what P1-A exists to fix.
+
+### 23.3 Result — LoCoMo, context budget fixed at 2048, store budget swept
+
+MiniLM + tiktoken, 10 conversations, 1527 questions. `stored` is what the
+policy still holds after ingest; `ctx` is what it spends per query.
+
+| S | Policy | Strict | **Answer** | Stored | Ctx |
+|---|---|---|---|---|---|
+| 1024 | RAG store-all | 4.3% | 9.1% | 1005 | 987 |
+| 1024 | P1-A adaptive | **9.1%** | 10.9% | 1002 | 984 |
+| 1024 | **P1-S select** | 5.6% | **15.7%** | 1006 | 963 |
+| 2048 | RAG store-all | 10.1% | 18.3% | 2031 | 1983 |
+| 2048 | P1-A adaptive | **19.6%** | 23.4% | 2022 | 1758 |
+| 2048 | **P1-S select** | 10.9% | **26.3%** | 2025 | 1932 |
+| 4096 | RAG store-all | 17.8% | 28.1% | 4068 | 2018 |
+| 4096 | P1-A adaptive | **30.5%** | 30.1% | 4042 | 1470 |
+| 4096 | **P1-S select** | 19.8% | **36.8%** | 4077 | 2006 |
+
+Delta against RAG store-all **at the same storage budget**:
+
+| S | P1 threshold | P1-A adaptive | **P1-S select** |
+| | strict / answer | strict / answer | strict / answer |
+|---|---|---|---|
+| 512 | +1.0 / +1.0 | +2.8 / +0.6 | +0.2 / **+2.5** |
+| 1024 | +1.8 / +2.4 | +4.8 / +1.8 | +1.2 / **+6.6** |
+| 2048 | +2.2 / −0.3 | +9.5 / +5.0 | +0.8 / **+8.0** |
+| 4096 | −3.7 / −7.8 | +12.7 / +2.0 | +2.0 / **+8.7** |
+| 8192 | −16.2 / −23.8 | +12.9 / **−6.9** | +0.7 / **+3.9** |
+| 16384 | −38.9 / −45.9 | +5.0 / +0.0 | +5.4 / **+5.9** |
+| unlim | −47.4 / −54.3 | +0.5 / +0.4 | +0.5 / +0.4 |
+
+**§22.2's verdict is reversed, but not in the way the project expected.**
+
+### 23.4 The finding: selection wins, compression loses
+
+Read the two metrics against each other, as §19 requires. **P1-A wins strict
+recall and loses answer recall** — at S=8192, +12.9 strict but **−6.9 answer**.
+A demoted gist keeps the evidence ids of the turn it came from while the answer
+text has been compressed away, so evidence recall credits it and
+answer-presence refuses to. This is exactly the failure mode the answer metric
+was built for in §19, and it fires here on the project's own headline variant.
+
+Turning demotion **off** makes it unambiguous. Same storage, same selection,
+the only change being drop-instead-of-compress:
+
+| S | RAG answer | P1-A (compress) | **P1-S (drop)** |
+|---|---|---|---|
+| 1024 | 9.1% | 10.9% | **15.7%** |
+| 2048 | 18.3% | 23.4% | **26.3%** |
+| 4096 | 28.1% | 30.1% | **36.8%** |
+| 8192 | 44.3% | 37.5% | **48.3%** |
+| 16384 | 66.4% | 66.4% | **72.3%** |
+
+**Compression is a net negative on the honest metric at every storage budget
+tested.** What earns the gain is (a) imposing the cap at all, and (b) *scored*
+eviction — choosing which turns to keep whole.
+
+That second point is the cleanest result the project has produced. **RAG and
+P1-S hold the same verbatim turns, in the same space, retrieved the same way,
+and differ in one respect only: which turns are forgotten when the cap binds.**
+RAG forgets oldest-first; P1-S forgets lowest-utility-first. The gap between
+them — **+8.7 answer points at S=4096** — is the decision policy and nothing
+else. That is precisely the quantity §4 set out to measure.
+
+**The rate–distortion reading:** at LoCoMo dialogue scale the optimum sits at
+the **vertex** — a *subset at full fidelity* beats *everything at reduced
+fidelity*. Compression should only begin to pay once the store is squeezed far
+enough that even the selected subset will not fit verbatim. The sweep bottoms
+out at S=512 before reaching that regime (all policies are near the floor
+there), so **where that second crossover lies is now the open question**, and
+it needs either a tighter S or a longer conversation than LoCoMo provides.
+
+### 23.5 Ablation under the corrected accounting
+
+`run_ablations.py --budget 2048 --store-budget 4096 --adaptive`:
+
+| Removed | Strict | Δ | Answer |
+|---|---|---|---|
+| *(full system)* | 30.5% | — | 30.1% |
+| retrieval (Tier 3) | 0.2% | **−30.3** | 2.4% |
+| demotion on pressure | 19.8% | −10.7 | **36.8** ↑ |
+| scored eviction (→ FIFO) | 25.5% | **−5.0** | 23.4% |
+| informative compressor | 26.7% | −3.8 | 27.8% |
+| consolidation merge | 28.0% | −2.6 | 25.0% |
+| supersession | 30.3% | −0.2 | 29.9% |
+| density packing | 30.5% | +0.0 | 30.1% |
+| working memory (Tier 2) | 30.5% | +0.0 | 30.1% |
+
+Three things to state plainly:
+
+* **Retrieval still dominates everything** (−30.3), as in §22.2. That has been
+  true in every regime measured.
+* **Scored eviction earns −5.0 strict and −6.7 answer** against FIFO. The
+  decision engine is doing real work — but only where the budget binds. At
+  S=8192 FIFO actually *beat* it by 3.4 strict, i.e. under light pressure
+  recency is the better forgetting rule.
+* **Density packing and Tier 2 read +0.0 because adaptive mode bypasses that
+  path entirely** — the positional Tier 2 share is replaced by one ranked pool.
+  They are no-ops here, not free components. Their §22.1 numbers still stand
+  for threshold mode.
+
+### 23.6 Guards added
+
+`test_memgate.py` is at **57 passed, 0 failed**. New:
+
+* no policy ever exceeds its storage budget (P0 / RAG / P1 / P1-A, four values
+  of S each);
+* **the label-invariance test now covers eviction and demotion** in both write
+  modes. The storage budget introduced two new decision points — *which item to
+  evict* and *which to demote* — and either could have read the answer key the
+  way consolidation did in §13. Eviction ranks on `utility` and recency only;
+  `_forget_key` is documented as label-blind and pinned by the test.
+* a tight budget must force real loss, and adaptive mode must demote **nothing**
+  when storage is free and something when it is not — otherwise the sweep would
+  be measuring a constraint that never binds.
+
+`count_tokens` is now memoised (pure function of its input); the cap re-counts
+held items on every write, which is otherwise O(n²) per conversation.
+
+### 23.7 Where this leaves the project
+
+The Review-2 story is now a real experimental narrative rather than a claim:
+
+1. Tiered memory with forgetting is already shipped by Letta/Mem0/Zep (§3, Q3).
+2. Measured honestly, a well-formed three-tier system scores **14.4%** on
+   LoCoMo where full-context scores 100% (§21).
+3. Its own ablation then showed the compression machinery to be a **net loss**
+   against keeping everything (§22.2) — and correctly diagnosed why: storage
+   was never budgeted (§22.3).
+4. With the store budgeted, **the decision policy is worth +8.7 answer points
+   over forgetting oldest-first, at identical storage and identical fidelity**
+   — but **compression itself still loses**. Keep a scored subset whole; do not
+   compress everything.
+
+That is a sharper and more defensible contribution than "we built a memory
+layer", and (4) is a genuine negative result about tiered compression at this
+scale, arrived at through the project's own metrics.
+
+**Do not present tiered compression as validated.** Present the storage-budget
+frontier: selection pays, compression does not (yet), and the crossover where
+it should is the next thing to find.
+
+### 23.8 Immediate next steps
+
+1. **Push S below 512 and/or use a longer benchmark** to find the second
+   crossover — the point where the selected subset no longer fits verbatim and
+   compression must start paying. LongMemEval is the natural candidate; its
+   conversations are far longer than LoCoMo's ~19K tokens.
+2. **P2 (LLM-judge)** is now the highest-value scorer work, and its value is
+   quantified in advance: scored eviction is worth −5.0 against FIFO, so a
+   better scorer attacks a component that is *already demonstrably load-bearing*
+   — unlike §15.1's embedder, which was masked by a broken write path.
+3. **Charge for the embeddings.** `stored_tokens` counts text only; a 384-d
+   float32 vector per item is real storage that RAG and P1-S pay on every
+   retained turn and a compressed gist pays once. Under a byte-denominated
+   budget the comparison may shift.
+4. Report **accuracy per stored token** as a headline axis alongside accuracy
+   per context token — the sweep already emits it (`strict_per_kstored`).
+
+### 23.9 How to run (updated)
+
+```bash
+cd ~/Documents/Capstone\ Project/memgate
+python3 test_memgate.py            # 57 passed, 0 failed
+python3 run_locomo.py              # §21 table, unchanged
+python3 run_storage_sweep.py       # §23 — the storage-budget frontier
+python3 run_ablations.py --budget 2048 --store-budget 4096 --adaptive
+```
+
+Results: `results/storage_sweep.csv` (adds `stored_tokens`, `max_stored`,
+`strict_per_kstored`).

@@ -35,7 +35,10 @@ class ThreeTierStore:
                  merge_head_words: int = 8, chunk_tokens: int = 64,
                  merge_on_consolidate: bool = True,
                  informative_compress: bool = True,
-                 supersede: bool = True):
+                 supersede: bool = True,
+                 store_budget: Optional[int] = None,
+                 demote_on_pressure: bool = True,
+                 scored_eviction: bool = True):
         self.short_capacity = short_capacity
         self.working_capacity_tokens = working_capacity_tokens
         self.promote_threshold = promote_threshold
@@ -47,6 +50,14 @@ class ThreeTierStore:
         self.merge_on_consolidate = merge_on_consolidate   # off = discard (§13.2)
         self.informative_compress = informative_compress   # off = head-truncate
         self.supersede = supersede
+        # --- storage budget (§22.3) ---
+        self.store_budget = store_budget
+        self.demote_on_pressure = demote_on_pressure   # off = drop instead
+        self.scored_eviction = scored_eviction         # off = FIFO ablation
+        self._enforcing = False
+        self.evicted = 0
+        self.demoted = 0
+        self.reclaimed = 0
         self.merges = 0
         self.short: List[MemoryItem] = []
         self.working: List[MemoryItem] = []
@@ -74,6 +85,7 @@ class ThreeTierStore:
         )
         self.working.append(it)
         self._consolidate_if_needed()
+        self.enforce_store_budget()
 
     def _consolidate_if_needed(self):
         """Tier 2 cannot grow forever: over budget, RE-SUMMARISE the oldest half.
@@ -287,20 +299,150 @@ class ThreeTierStore:
             if best is not None:
                 best.superseded_by = it.id
         self.long.append(it)
+        self.enforce_store_budget()
         return it
 
     # ------------------------------------------------------------ retrieval
-    def retrieve(self, query: str, k: int = 5) -> List[MemoryItem]:
+    def retrieve(self, query: str, k: int = 5,
+                 include_working: bool = False) -> List[MemoryItem]:
+        """Rank stored items against the query.
+
+        `include_working` puts Tier 2 into the retrieval pool as well. Tier 2 is
+        otherwise read POSITIONALLY -- packed by density, never by relevance to
+        the question being asked -- so anything routed there is unreachable no
+        matter how much of it is stored. That is why growing Tier 2 alone made
+        recall WORSE (12.1% vs 24.2% at S=16384): more stored, none of it
+        addressable. Tier 2 items already carry embeddings, so making them
+        retrievable costs nothing but the ranking.
+        """
         q = embed(query)
-        scored = [
-            (cosine(q, i.embedding), i)
-            for i in self.long if i.is_active
-        ]
+        pool = [i for i in self.long if i.is_active]
+        if include_working:
+            pool += list(self.working)
+        scored = [(cosine(q, i.embedding), i) for i in pool]
         scored.sort(key=lambda x: -x[0])
         out = [i for s, i in scored[:k] if s > 0]
         for i in out:
             i.access_count += 1
         return out
+
+    # ------------------------------------------------- storage budget (§22.3)
+    def stored_tokens(self) -> int:
+        """Tokens of text this store physically holds, across all three tiers.
+
+        This is the quantity the whole project had never constrained. Every
+        experiment up to §22 capped the CONTEXT assembled per query but left
+        the STORE unbounded, so "keep everything and retrieve top-k" was
+        charged nothing for holding all 419 turns of a conversation. Under that
+        accounting forgetting can only ever lose information -- there is no
+        budget it saves -- and the ablation duly showed the compression
+        machinery to be a net loss against keeping everything.
+
+        Retired (superseded) records are excluded: they are reclaimed on the
+        next enforcement pass, and a retired record is not storage a real
+        system keeps paying for.
+        """
+        return (sum(count_tokens(i.text) for i in self.short)
+                + sum(count_tokens(i.text) for i in self.working)
+                + sum(count_tokens(i.text) for i in self.long if i.is_active))
+
+    def _forget_key(self, it: MemoryItem):
+        """Eviction order: the item with the lowest key is forgotten first.
+
+        Deliberately minimal -- `utility` from the scorer, oldest breaking
+        ties. §22.2 is the cautionary tale here: one untuned threshold
+        (`tau_fact`) turned out to dominate every carefully engineered
+        component in the system. Stacking heuristics into the eviction rule
+        would repeat that mistake with more knobs, so this stays at one signal
+        that is already measured, already ablated, and cheap to reason about.
+        `scored_eviction=False` gives plain FIFO as the control.
+
+        NEVER reads `fact_id` or `covered_ids`. Those are evaluation labels,
+        and choosing what to forget is precisely a policy decision -- the same
+        class of leak that inflated the Step 0 headline by 45 points. The
+        invariance test in test_memgate.py covers this path too.
+        """
+        if not self.scored_eviction:
+            return (0.0, it.turn_index)
+        return (it.utility, it.turn_index)
+
+    def _demote(self, it: MemoryItem) -> bool:
+        """Compress a Tier 3 fact into a Tier 2 gist. True if it shrank.
+
+        This is the cache -> RAM -> disk demotion the design (§5) always
+        described but which only ever ran on Tier-2 consolidation. Under
+        storage pressure it is the cheap loss: pay fewer tokens for a lossier
+        record rather than lose the record outright.
+
+        The gist keeps the evidence ids of what it came from, exactly as a
+        merged gist does. That is generous to evidence-recall -- a truncated
+        gist still claims its id -- which is why the answer-presence metric
+        (§19) exists and is reported alongside.
+        """
+        gist = (informative_head(it.text, self.merge_head_words)
+                if self.informative_compress
+                else " ".join(it.text.split()[:self.merge_head_words]))
+        if count_tokens(gist) >= count_tokens(it.text):
+            return False                      # nothing gained; let it go
+        self.demoted += 1
+        self.working.append(MemoryItem(
+            text=gist, tier=WORKING, kind="summary",
+            session=it.session, turn_index=it.turn_index,
+            utility=it.utility, type_label="demoted", fact_id=None,
+            embedding=embed(gist), source_ids=[it.id],
+            covered_ids=sorted(it.evidence_ids),
+            fragments=[(tuple(it.evidence_ids), gist)],
+        ))
+        return True
+
+    def enforce_store_budget(self):
+        """Hold total stored tokens at or below `store_budget`.
+
+        Cheapest loss first:
+          1. reclaim superseded records   -- already logically retired
+          2. demote the lowest-utility Tier 3 fact into a Tier 2 gist
+          3. drop from Tier 2 when even the gist will not fit
+
+        Tier 1 is never evicted: it is the live turn buffer, it is what makes
+        the next few turns coherent, and it is bounded at `short_capacity`
+        items anyway. A budget small enough that Tier 1 alone breaches it is
+        reported rather than silently violated -- see `stored_tokens`.
+
+        Each iteration strictly reduces `stored_tokens` (a demoted gist is
+        smaller than its source by construction, and a drop removes tokens
+        outright), so the loop terminates.
+        """
+        if self.store_budget is None or self._enforcing:
+            return
+        self._enforcing = True
+        try:
+            if any(not i.is_active for i in self.long):
+                n = len(self.long)
+                self.long = [i for i in self.long if i.is_active]
+                self.reclaimed += n - len(self.long)
+
+            self._consolidate_if_needed()
+
+            guard = 0
+            while self.stored_tokens() > self.store_budget:
+                guard += 1
+                if guard > 8192:              # cannot happen; never spin
+                    break
+                if self.long:
+                    victim = min(self.long, key=self._forget_key)
+                    self.long.remove(victim)
+                    self.evicted += 1
+                    if not (self.demote_on_pressure and self._demote(victim)):
+                        self.dropped += 1
+                    continue
+                if self.working:
+                    victim = min(self.working, key=self._forget_key)
+                    self.working.remove(victim)
+                    self.dropped += 1
+                    continue
+                break                          # only Tier 1 left; see docstring
+        finally:
+            self._enforcing = False
 
     def stats(self):
         return {
@@ -310,4 +452,8 @@ class ThreeTierStore:
             "dropped": self.dropped,
             "consolidations": self.consolidations,
             "merges": self.merges,
+            "evicted": self.evicted,
+            "demoted": self.demoted,
+            "reclaimed": self.reclaimed,
+            "stored_tokens": self.stored_tokens(),
         }

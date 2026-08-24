@@ -13,7 +13,7 @@ Policies:
 from typing import List
 from .types import (Turn, MemoryItem, ContextBundle,
                     SHORT_TERM, WORKING, LONG_TERM)
-from .utils import count_tokens, embed
+from .utils import count_tokens, embed, cosine
 from .compress import compress
 from .store import ThreeTierStore
 from .scoring import HeuristicScorer
@@ -82,8 +82,13 @@ class FullContextPolicy:
         return ContextBundle(text=text, items=list(self.items),
                              tokens=count_tokens(text), budget=budget)
 
+    def stored_tokens(self) -> int:
+        # Deliberately unbounded, like the context: this is the reference row
+        # that shows what the whole conversation costs to hold verbatim.
+        return sum(count_tokens(i.text) for i in self.items)
+
     def stats(self):
-        return {"stored": len(self.items)}
+        return {"stored": len(self.items), "stored_tokens": self.stored_tokens()}
 
 
 class OraclePolicy:
@@ -106,8 +111,12 @@ class OraclePolicy:
             items.extend(self.by_fact.get(gid, [])[-1:])
         return _pack(items, budget)
 
+    def stored_tokens(self) -> int:
+        return sum(count_tokens(i.text)
+                   for v in self.by_fact.values() for i in v)
+
     def stats(self):
-        return {"facts": len(self.by_fact)}
+        return {"facts": len(self.by_fact), "stored_tokens": self.stored_tokens()}
 
 
 class SlidingWindowPolicy:
@@ -121,21 +130,115 @@ class SlidingWindowPolicy:
     name = "P0 sliding-window"
     is_baseline = False
 
-    def __init__(self, max_retained: int = 2000, **kw):
+    def __init__(self, max_retained: int = 2000, store_budget: int = None, **kw):
         self.max_retained = max_retained
+        self.store_budget = store_budget
         self.items: List[MemoryItem] = []
+        self._tokens = 0
+        self.dropped = 0
 
     def observe(self, turn: Turn):
-        self.items.append(_as_item(turn))
+        it = _as_item(turn)
+        self.items.append(it)
+        self._tokens += count_tokens(it.text)
         if len(self.items) > self.max_retained:
-            self.items.pop(0)
+            self._tokens -= count_tokens(self.items.pop(0).text)
+        # Storage budget: retain the most recent S tokens. For a recency policy
+        # the cap IS the policy -- there is nothing else it could drop -- which
+        # is what makes it the honest floor for the storage sweep.
+        while self.store_budget is not None and self._tokens > self.store_budget \
+                and len(self.items) > 1:
+            self._tokens -= count_tokens(self.items.pop(0).text)
+            self.dropped += 1
 
     def build_context(self, query: str, budget: int) -> ContextBundle:
         # most recent first, packed until the budget is exhausted
         return _pack(list(reversed(self.items)), budget)
 
+    def stored_tokens(self) -> int:
+        return sum(count_tokens(i.text) for i in self.items)
+
     def stats(self):
-        return {"held": len(self.items)}
+        return {"held": len(self.items), "dropped": self.dropped,
+                "stored_tokens": self.stored_tokens()}
+
+
+class RAGPolicy:
+    """Store every turn verbatim, retrieve top-k. No compression, no tiering.
+
+    §22.2 found this configuration -- reachable in MemGate by setting
+    `tau_fact = 0`, so that nothing is ever compressed, merged or dropped --
+    scored 59.2% strict on LoCoMo against the fully tuned system's 14.4%, and
+    landed within one point of the best tuned variant. Retrieval contributed
+    ~51 of those points; merging and compression together contributed ~1.
+
+    That result is why the storage budget exists, so the configuration is
+    promoted here from a footnote to a named baseline: it is the thing
+    compression actually has to beat.
+
+    Under a storage cap it evicts FIFO. It has no scorer, and that is the
+    point -- it is the no-policy control. The three retention regimes then
+    isolate one variable each at a fixed store size S:
+
+        P0  vs  RAG   same retention, different READ path
+                      (recency vs embedding retrieval)
+        RAG vs  P1    same storage budget, different WRITE path
+                      (verbatim-and-forget vs compress-and-keep)
+
+    If compression is worth anything, P1 holds more of the conversation per
+    stored token than RAG and overtakes it as S is squeezed. If it never
+    overtakes, that is a real negative result about tiered memory rather than
+    an artefact of unbounded storage.
+    """
+    name = "RAG store-all"
+    is_baseline = False
+
+    def __init__(self, store_budget: int = None, retrieve_k: int = 60,
+                 split=(0.25, 0.75), budget: int = None, **kw):
+        self.store_budget = store_budget
+        self.retrieve_k = retrieve_k
+        self.split = split
+        self.items: List[MemoryItem] = []
+        self._tokens = 0
+        self.dropped = 0
+
+    def observe(self, turn: Turn):
+        it = _as_item(turn)
+        it.embedding = embed(it.text)
+        self.items.append(it)
+        self._tokens += count_tokens(it.text)
+        while self.store_budget is not None and self._tokens > self.store_budget \
+                and len(self.items) > 1:
+            self._tokens -= count_tokens(self.items.pop(0).text)
+            self.dropped += 1
+
+    def build_context(self, query: str, budget: int) -> ContextBundle:
+        # Same read-path shape as MemGate -- a recent share plus a retrieved
+        # share -- so the only difference between them is what the write path
+        # chose to keep. Recent turns are excluded from the retrieval pool so
+        # the two shares never pay twice for the same turn.
+        b_recent = int(budget * self.split[0])
+        recent = _pack(list(reversed(self.items)), b_recent)
+        seen = {id(i) for i in recent.items}
+        q = embed(query)
+        scored = [(cosine(q, i.embedding), i)
+                  for i in self.items if id(i) not in seen]
+        scored.sort(key=lambda x: -x[0])
+        hits = [i for sc, i in scored[:self.retrieve_k] if sc > 0]
+        for i in hits:
+            i.access_count += 1
+        long_ = _pack(hits, budget - recent.tokens)
+        items = recent.items + long_.items
+        text = "\n".join(i.text for i in items)
+        return ContextBundle(text=text, items=items,
+                             tokens=recent.tokens + long_.tokens, budget=budget)
+
+    def stored_tokens(self) -> int:
+        return sum(count_tokens(i.text) for i in self.items)
+
+    def stats(self):
+        return {"held": len(self.items), "dropped": self.dropped,
+                "stored_tokens": self.stored_tokens()}
 
 
 # --------------------------------------------------------------- MemGate
@@ -163,7 +266,13 @@ class MemGatePolicy:
                  pack_by_density: bool = True,
                  use_retrieval: bool = True,
                  use_working: bool = True,
-                 supersede: bool = True, **kw):
+                 supersede: bool = True,
+                 store_budget: int = None,
+                 demote_on_pressure: bool = True,
+                 scored_eviction: bool = True,
+                 fill_store: str = "long",
+                 write_mode: str = "threshold",
+                 retrieve_working: bool = None, **kw):
         # Size the working tier from the token budget rather than pinning it at
         # a constant. A fixed 400-token Tier 2 meant MemGate could not fill a
         # 4096-token budget however well it scored (it used 1336), so the
@@ -176,22 +285,84 @@ class MemGatePolicy:
         if working_capacity_tokens is None:
             working_capacity_tokens = (max(400, int(budget * split[1] * 2))
                                        if budget else 400)
+        # Under a storage cap, Tier 2 cannot be sized from the context budget
+        # alone -- a 4096-token context share is meaningless when the entire
+        # store is capped at 1024. Take the tighter of the two.
+        if store_budget is not None:
+            working_capacity_tokens = min(working_capacity_tokens,
+                                          max(64, int(store_budget * split[1])))
+        # In adaptive mode Tier 2 is a demotion destination under storage
+        # pressure, not a share of the context window, so it is sized from the
+        # STORE budget. Sized from the context budget it stayed pinned at 1024
+        # tokens however large the store was, and MemGate flatlined at 2148
+        # stored tokens on a 16384-token allowance.
+        if write_mode == "adaptive" and store_budget is not None:
+            working_capacity_tokens = max(64, int(store_budget * 0.5))
         self.scorer = scorer or HeuristicScorer()
         self.store = ThreeTierStore(short_capacity, working_capacity_tokens,
                                     promote_threshold=promote_threshold,
                                     supersede_threshold=supersede_threshold,
                                     merge_on_consolidate=merge_on_consolidate,
                                     informative_compress=informative_compress,
-                                    supersede=supersede)
+                                    supersede=supersede,
+                                    store_budget=store_budget,
+                                    demote_on_pressure=demote_on_pressure,
+                                    scored_eviction=scored_eviction)
         self.informative_compress = informative_compress
         self.pack_by_density = pack_by_density
         self.use_retrieval = use_retrieval
         self.use_working = use_working
         self.tau_fact = tau_fact
         self.tau_low = tau_low
+        # With a storage cap, dropping a sub-threshold item while the store
+        # still has room is pure waste -- the same strawman as §13.5, pointed
+        # the other way: there MemGate could not fill the CONTEXT it was given,
+        # here it cannot fill the STORE. It flatlined at 2148 stored tokens on
+        # a 16384-token allowance, so the S >= 4096 comparisons were measuring
+        # MemGate's refusal to use its budget rather than the value of
+        # compression.
+        #
+        # Under a cap the thresholds should ORDER the queue, not force a drop:
+        # the budget is the constraint, and `enforce_store_budget` already
+        # decides what actually goes when pressure arrives.
+        #     "long"    keep verbatim, retrievable; compress only under pressure
+        #     "working" keep as a compressed gist immediately
+        #     None      drop outright (the pre-storage-budget behaviour)
+        # Only ever active when a store budget is set -- with an unbounded store
+        # "fill it" would mean "keep everything", which is the RAG baseline, and
+        # would silently change every previously reported number.
+        self.fill_store = fill_store if store_budget is not None else None
+        self.store_budget = store_budget
+        # write_mode -- WHERE the keep/compress/forget decision is taken.
+        #
+        #   "threshold" (default, unchanged)
+        #       tau_fact / tau_low decide at INGEST. An item scoring below
+        #       tau_low is compressed or dropped there and then, whatever the
+        #       storage situation. Every result in §15-§22 was produced this way
+        #       and stays reproducible.
+        #
+        #   "adaptive"
+        #       Everything is stored VERBATIM while the store has room, and the
+        #       scores only ORDER the eviction queue; compression happens on
+        #       demotion, when the budget actually binds. The compression rate
+        #       therefore adapts to storage pressure instead of being fixed in
+        #       advance -- which is the rate-distortion claim the project makes,
+        #       and the form §22.3 asked for.
+        #
+        # Threshold mode compresses every turn to a ~14-word gist on the way in,
+        # so it cannot store more than ~4735 tokens of a 19K conversation no
+        # matter how large the budget. That is why it lost to plain retrieval at
+        # every store size above 2048.
+        self.write_mode = write_mode
+        # Demoted gists live in Tier 2, so in adaptive mode Tier 2 MUST be
+        # retrievable or the demotion destination is a black hole.
+        self.retrieve_working = (retrieve_working if retrieve_working is not None
+                                 else write_mode == "adaptive")
+        if write_mode == "adaptive":
+            self.name = "P1-A MemGate adaptive"
         self.split = split          # (short, working, long) budget shares
         self.retrieve_k = retrieve_k
-        self.routed = {"long": 0, "working": 0, "dropped": 0}
+        self.routed = {"long": 0, "working": 0, "dropped": 0, "filled": 0}
 
     # ---------------------------------------------------------- write path
     def observe(self, turn: Turn):
@@ -204,6 +375,15 @@ class MemGatePolicy:
         u, label = self.scorer.score(item.text, speaker)
         item.utility, item.type_label = u, label
 
+        if self.write_mode == "adaptive":
+            # Keep it whole and retrievable. `u` is not discarded -- it rides on
+            # the item and sets its place in the eviction queue (_forget_key),
+            # so the scorer still decides what is forgotten first, just later
+            # and against a real budget rather than a guessed threshold.
+            self.store.add_long(item.text, item, kind="turn")
+            self.routed["long"] += 1
+            return
+
         if u >= self.tau_fact:
             self.store.add_long(item.text, item, kind="fact")
             self.routed["long"] += 1
@@ -214,6 +394,16 @@ class MemGatePolicy:
             self.store.add_working(self._summarise(item.text), item)
 
             self.routed["working"] += 1
+        elif self.fill_store == "long":
+            # Verbatim while there is headroom. Demotion to a gist happens on
+            # pressure, so the compression RATE adapts to how tight the store
+            # is instead of being fixed in advance -- which is the
+            # rate-distortion claim the project is actually making.
+            self.store.add_long(item.text, item, kind="turn")
+            self.routed["filled"] += 1
+        elif self.fill_store == "working":
+            self.store.add_working(self._summarise(item.text), item)
+            self.routed["filled"] += 1
         else:
             self.routed["dropped"] += 1
             self.store.dropped += 1
@@ -249,6 +439,20 @@ class MemGatePolicy:
         else:
             work = _pack([], b_work)
 
+        if self.retrieve_working:
+            # One relevance-ranked pool over Tier 2 + Tier 3 rather than a
+            # positional Tier 2 share plus a retrieved Tier 3 share. Splitting
+            # them fixes in advance how much of the context each tier may use,
+            # which is a guess; ranking them together lets the QUESTION decide.
+            retrieved = (self.store.retrieve(query, k=self.retrieve_k,
+                                             include_working=True)
+                         if self.use_retrieval else [])
+            rest = _pack(retrieved, budget - short.tokens)
+            items = short.items + rest.items
+            text = "\n".join(i.text for i in items)
+            return ContextBundle(text=text, items=items,
+                                 tokens=short.tokens + rest.tokens, budget=budget)
+
         retrieved = (self.store.retrieve(query, k=self.retrieve_k)
                      if self.use_retrieval else [])
         long_ = _pack(retrieved, b_long)
@@ -259,6 +463,9 @@ class MemGatePolicy:
                              tokens=short.tokens + work.tokens + long_.tokens,
                              budget=budget)
 
+    def stored_tokens(self) -> int:
+        return self.store.stored_tokens()
+
     def stats(self):
         # Namespaced: store.stats() and `routed` both define long/working/dropped,
         # so a plain update() silently replaced the tier SIZES with the routing
@@ -268,9 +475,50 @@ class MemGatePolicy:
         return s
 
 
+def MemGateAdaptivePolicy(**kw):
+    """MemGate with the decision moved from ingest thresholds to eviction.
+
+    Stores verbatim while the store has room and DEMOTES to a compressed gist
+    under pressure, so the compression rate follows the storage constraint.
+    """
+    kw.setdefault("write_mode", "adaptive")
+    return MemGatePolicy(**kw)
+
+
+def MemGateSelectPolicy(**kw):
+    """Selection only: keep the high-utility turns verbatim, forget the rest.
+
+    Identical to the adaptive policy except that an evicted item is DROPPED
+    rather than compressed into a gist. It is therefore the same storage
+    budget, the same verbatim fidelity and the same retrieval as RAG store-all,
+    differing in one thing only -- WHICH turns are forgotten when the cap
+    binds. RAG evicts FIFO; this evicts by scored utility. The gap between them
+    is the decision policy and nothing else, which is the isolation the whole
+    project is aimed at.
+
+    It exists because compression measurably loses. On answer-presence -- the
+    metric that checks whether the answer TEXT survived, not merely a pointer
+    to the turn that held it -- dropping beats demoting at every storage budget
+    tested (36.8% vs 30.1% at S=4096), while demotion wins on evidence recall
+    by keeping ids whose text it has thrown away. That is the §19 failure mode,
+    and it is why both metrics are always reported together.
+
+    The rate-distortion reading: at LoCoMo dialogue scale the optimum sits at
+    the vertex -- a subset at full fidelity beats everything at reduced
+    fidelity. Compression only starts to pay when the store is squeezed far
+    enough that even the selected subset will not fit verbatim.
+    """
+    kw.setdefault("write_mode", "adaptive")
+    kw.setdefault("demote_on_pressure", False)
+    return MemGatePolicy(**kw)
+
+
 POLICIES = {
     "full": FullContextPolicy,
     "oracle": OraclePolicy,
     "p0": SlidingWindowPolicy,
+    "rag": RAGPolicy,
     "p1": MemGatePolicy,
+    "p1a": MemGateAdaptivePolicy,
+    "p1s": MemGateSelectPolicy,
 }

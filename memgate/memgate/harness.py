@@ -36,6 +36,11 @@ def run_policy(policy, turns: List[Turn], questions: List[Question],
     for turn in turns:
         policy.observe(turn)
     ingest_ms = (time.perf_counter() - t0) * 1000
+    # Measured once, after ingest and before any query: what the policy is
+    # still HOLDING, as opposed to what it spends per query. §22.3 -- the
+    # experiment constrained the context but never the store, so a policy that
+    # kept the entire conversation paid nothing for it.
+    stored = policy.stored_tokens() if hasattr(policy, "stored_tokens") else 0
 
     hits, soft_sum, token_counts, latencies = 0, 0.0, [], []
     ans_n = ans_hits = 0
@@ -84,6 +89,7 @@ def run_policy(policy, turns: List[Turn], questions: List[Question],
         "answer_hits": ans_hits,
         "hits": hits,
         "n": n,
+        "stored_tokens": stored,
         "avg_tokens": statistics.mean(token_counts) if token_counts else 0,
         "max_tokens": max(token_counts) if token_counts else 0,
         "p95_latency_ms": lat_sorted[int(0.95 * (len(lat_sorted) - 1))] if lat_sorted else 0,

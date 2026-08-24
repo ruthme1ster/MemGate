@@ -9,7 +9,7 @@ conversations stay inside a fixed token budget without losing what matters.
 
 ---
 
-## Status: Step 1 — running on LoCoMo
+## Status: Step 4 — storage-budget frontier
 
 > **Earlier Step 0 numbers were withdrawn.** The policy was reading `fact_id`,
 > the ground-truth evaluation label, when deciding what to keep. That leak was
@@ -18,11 +18,13 @@ conversations stay inside a fixed token budget without losing what matters.
 
 ```bash
 cd memgate
-python3 test_memgate.py           # 35 tests (34 under the hashing ablation)
+python3 test_memgate.py           # 57 tests
 python3 run_locomo.py             # LoCoMo — the real benchmark
+python3 run_storage_sweep.py      # the storage-budget frontier (§23)
 python3 run_experiment.py         # synthetic sanity set
 python3 diagnose.py               # why the policy misses what it misses
 
+python3 run_ablations.py --budget 2048 --store-budget 4096 --adaptive
 MEMGATE_EMBEDDER=hash python3 run_locomo.py    # embedder ablation
 ```
 
@@ -115,6 +117,52 @@ The gap this project exists to close is now measured in our own harness:
 **Oracle 100% at 65 tokens vs P1 15% at 2055** — entirely memory selection, not
 reasoning.
 
+## Results — the storage budget, and why it changes the answer
+
+Every result above caps the **context** assembled per query but leaves the
+**store** unbounded. Under that accounting "keep everything and retrieve top-k"
+is charged nothing for holding all 419 turns of a conversation, so forgetting
+can only ever lose information — and our own ablation duly found the
+compression machinery to be a **net loss** against keeping everything.
+
+`run_storage_sweep.py` imposes the missing constraint: the store is capped at
+**S** tokens, S is swept, and accuracy is reported per *stored* token as well as
+per context token. Three retention regimes isolate one variable each:
+
+| comparison | held constant | varies |
+|---|---|---|
+| P0 vs RAG | retention | **read path** — recency vs retrieval |
+| RAG vs P1-S | storage, fidelity, retrieval | **which turns are forgotten** |
+| P1-S vs P1-A | storage, selection | **fidelity** — drop vs compress |
+
+Context budget fixed at 2048; **answer** recall is the honest metric:
+
+| S | Policy | Strict | **Answer** | Stored |
+|---|---|---|---|---|
+| 2048 | RAG store-all | 10.1% | 18.3% | 2031 |
+| 2048 | P1-A adaptive *(compress)* | **19.6%** | 23.4% | 2022 |
+| 2048 | **P1-S select** *(drop)* | 10.9% | **26.3%** | 2025 |
+| 4096 | RAG store-all | 17.8% | 28.1% | 4068 |
+| 4096 | P1-A adaptive *(compress)* | **30.5%** | 30.1% | 4042 |
+| 4096 | **P1-S select** *(drop)* | 19.8% | **36.8%** | 4077 |
+
+**Selection wins; compression loses.** P1-A wins strict recall and *loses*
+answer recall (−6.9 at S=8192) because a compressed gist keeps the evidence ids
+of a turn whose text it has thrown away — the exact failure the answer metric
+exists to catch. Dropping instead of compressing beats both at every budget.
+
+The cleanest number the project has produced: **RAG and P1-S hold the same
+verbatim turns, in the same space, retrieved the same way, and differ only in
+which turns they forget** — oldest-first versus lowest-utility-first. That gap
+is **+8.7 answer points at S=4096**, and it is the decision policy and nothing
+else.
+
+**Rate–distortion reading:** at LoCoMo scale the optimum sits at the *vertex* —
+a subset at full fidelity beats everything at reduced fidelity. Compression
+should only start paying once even the selected subset will not fit verbatim,
+and LoCoMo's ~19K-token conversations do not reach that regime. Finding that
+second crossover needs a tighter S or a longer benchmark.
+
 ## Results — synthetic sanity set (leak-free)
 
 | Policy | Budget | Recall | Avg tokens |
@@ -181,6 +229,9 @@ otherwise       -> dropped from context
 |---|---|---|---|
 | P0 | Sliding window | recency only, budget-driven | done |
 | P1 | MemGate heuristic | rules + shallow NER + novelty | done |
+| P1-A | MemGate adaptive | verbatim until full, **compress** on eviction | done |
+| P1-S | MemGate select | verbatim until full, **drop** on eviction | done |
+| RAG | store-all + retrieve | none — FIFO eviction (the control) | done |
 | P2 | LLM-judged salience | small LLM rates importance | Phase 3 |
 | P3 | Distilled scorer | trained on P2 labels | Phase 3 |
 
@@ -215,9 +266,11 @@ memgate/
     data.py      synthetic generator + LoCoMo loader + integrity assertions
     harness.py   strict/soft recall, per-category breakdown, sweep, CSV
   run_locomo.py        LoCoMo evaluation
+  run_storage_sweep.py storage-budget frontier
+  run_ablations.py     component attribution
   run_experiment.py    synthetic sanity set
   diagnose.py          miss analysis by cause
-  test_memgate.py      32 tests
+  test_memgate.py      57 tests
   data/locomo/         locomo10.json (2.7 MB)
   models/              vendored all-MiniLM-L6-v2
 ```
@@ -230,10 +283,15 @@ documented — the store must come out bit-identical when the labels are strippe
 
 ```
 PASS  routing is invariant to ground-truth labels
+PASS  eviction under a storage budget is label-blind (threshold)
+PASS  eviction under a storage budget is label-blind (adaptive)
 ```
 
 The test exists because the earlier version *did* read `fact_id`, and it was
-worth 45–47 recall points.
+worth 45–47 recall points. The storage budget added two more decision points
+that could read the answer key — *which item to evict* and *which to demote* —
+so the same invariant is pinned there too. Eviction ranks on `utility` and
+recency only.
 
 ## Embedder ablation
 
@@ -254,8 +312,14 @@ record and retiring the wrong one:
 
 ## Next
 
-1. **Fix consolidation** — re-summarise on eviction instead of discarding, so
-   Tier 2 stops being a death chamber. Lifts the 9.4% write-path ceiling and
-   should move multi-hop fastest.
-2. P2 (LLM judge) — the heuristic scorer is the demonstrated bottleneck.
-3. Answer-presence metric, then end-task accuracy through a real model.
+1. **Find the second crossover** — push S below 512, or move to a benchmark
+   with longer conversations than LoCoMo's ~19K tokens (LongMemEval), to reach
+   the regime where the selected subset no longer fits verbatim and compression
+   must start paying.
+2. **P2 (LLM judge)** — now the highest-value work, and its payoff is
+   quantified in advance: scored eviction is already worth −5.0 strict against
+   FIFO, so a better scorer attacks a component demonstrably load-bearing.
+3. **Charge for the embeddings.** `stored_tokens` counts text only; a 384-d
+   float32 vector per retained item is real storage that verbatim policies pay
+   on every turn. A byte-denominated budget may shift the comparison.
+4. End-task accuracy through a real model — context recall is its ceiling.
