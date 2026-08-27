@@ -55,6 +55,19 @@ def _by_density(items: List[MemoryItem]) -> List[MemoryItem]:
     )
 
 
+def _item_cost(it: MemoryItem, cost_mode: str, vector_bytes: int = 1536) -> int:
+    """Storage cost of one item, in the budget's unit. See store._cost.
+
+    Under "bytes" an item pays for its embedding vector as well as its text.
+    A policy that does not retrieve (P0) stores no vectors and honestly pays
+    nothing for them -- recency needs no index.
+    """
+    if cost_mode == "bytes":
+        vec = vector_bytes if it.embedding is not None else 0
+        return len(it.text.encode("utf-8")) + vec
+    return count_tokens(it.text)
+
+
 def _as_item(turn: Turn) -> MemoryItem:
     return MemoryItem(
         text=f"[{turn.speaker}] {turn.text}",
@@ -130,9 +143,12 @@ class SlidingWindowPolicy:
     name = "P0 sliding-window"
     is_baseline = False
 
-    def __init__(self, max_retained: int = 2000, store_budget: int = None, **kw):
+    def __init__(self, max_retained: int = 2000, store_budget: int = None,
+                 cost_mode: str = "tokens", vector_bytes: int = 1536, **kw):
         self.max_retained = max_retained
         self.store_budget = store_budget
+        self.cost_mode = cost_mode
+        self.vector_bytes = vector_bytes
         self.items: List[MemoryItem] = []
         self._tokens = 0
         self.dropped = 0
@@ -140,16 +156,19 @@ class SlidingWindowPolicy:
     def observe(self, turn: Turn):
         it = _as_item(turn)
         self.items.append(it)
-        self._tokens += count_tokens(it.text)
+        self._tokens += self._cost(it)
         if len(self.items) > self.max_retained:
-            self._tokens -= count_tokens(self.items.pop(0).text)
+            self._tokens -= self._cost(self.items.pop(0))
         # Storage budget: retain the most recent S tokens. For a recency policy
         # the cap IS the policy -- there is nothing else it could drop -- which
         # is what makes it the honest floor for the storage sweep.
         while self.store_budget is not None and self._tokens > self.store_budget \
                 and len(self.items) > 1:
-            self._tokens -= count_tokens(self.items.pop(0).text)
+            self._tokens -= self._cost(self.items.pop(0))
             self.dropped += 1
+
+    def _cost(self, it):
+        return _item_cost(it, self.cost_mode, self.vector_bytes)
 
     def build_context(self, query: str, budget: int) -> ContextBundle:
         # most recent first, packed until the budget is exhausted
@@ -157,6 +176,9 @@ class SlidingWindowPolicy:
 
     def stored_tokens(self) -> int:
         return sum(count_tokens(i.text) for i in self.items)
+
+    def stored_cost(self) -> int:
+        return sum(self._cost(i) for i in self.items)
 
     def stats(self):
         return {"held": len(self.items), "dropped": self.dropped,
@@ -194,8 +216,11 @@ class RAGPolicy:
     is_baseline = False
 
     def __init__(self, store_budget: int = None, retrieve_k: int = 60,
-                 split=(0.25, 0.75), budget: int = None, **kw):
+                 split=(0.25, 0.75), budget: int = None,
+                 cost_mode: str = "tokens", vector_bytes: int = 1536, **kw):
         self.store_budget = store_budget
+        self.cost_mode = cost_mode
+        self.vector_bytes = vector_bytes
         self.retrieve_k = retrieve_k
         self.split = split
         self.items: List[MemoryItem] = []
@@ -206,11 +231,14 @@ class RAGPolicy:
         it = _as_item(turn)
         it.embedding = embed(it.text)
         self.items.append(it)
-        self._tokens += count_tokens(it.text)
+        self._tokens += self._cost(it)
         while self.store_budget is not None and self._tokens > self.store_budget \
                 and len(self.items) > 1:
-            self._tokens -= count_tokens(self.items.pop(0).text)
+            self._tokens -= self._cost(self.items.pop(0))
             self.dropped += 1
+
+    def _cost(self, it):
+        return _item_cost(it, self.cost_mode, self.vector_bytes)
 
     def build_context(self, query: str, budget: int) -> ContextBundle:
         # Same read-path shape as MemGate -- a recent share plus a retrieved
@@ -236,9 +264,13 @@ class RAGPolicy:
     def stored_tokens(self) -> int:
         return sum(count_tokens(i.text) for i in self.items)
 
+    def stored_cost(self) -> int:
+        return sum(self._cost(i) for i in self.items)
+
     def stats(self):
         return {"held": len(self.items), "dropped": self.dropped,
-                "stored_tokens": self.stored_tokens()}
+                "stored_tokens": self.stored_tokens(),
+                "stored_cost": self.stored_cost()}
 
 
 # --------------------------------------------------------------- MemGate
@@ -272,7 +304,8 @@ class MemGatePolicy:
                  scored_eviction: bool = True,
                  fill_store: str = "long",
                  write_mode: str = "threshold",
-                 retrieve_working: bool = None, **kw):
+                 retrieve_working: bool = None,
+                 cost_mode: str = "tokens", vector_bytes: int = 1536, **kw):
         # Size the working tier from the token budget rather than pinning it at
         # a constant. A fixed 400-token Tier 2 meant MemGate could not fill a
         # 4096-token budget however well it scored (it used 1336), so the
@@ -307,7 +340,9 @@ class MemGatePolicy:
                                     supersede=supersede,
                                     store_budget=store_budget,
                                     demote_on_pressure=demote_on_pressure,
-                                    scored_eviction=scored_eviction)
+                                    scored_eviction=scored_eviction,
+                                    cost_mode=cost_mode,
+                                    vector_bytes=vector_bytes)
         self.informative_compress = informative_compress
         self.pack_by_density = pack_by_density
         self.use_retrieval = use_retrieval
@@ -465,6 +500,9 @@ class MemGatePolicy:
 
     def stored_tokens(self) -> int:
         return self.store.stored_tokens()
+
+    def stored_cost(self) -> int:
+        return self.store.stored_cost()
 
     def stats(self):
         # Namespaced: store.stats() and `routed` both define long/working/dropped,

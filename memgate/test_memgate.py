@@ -289,6 +289,35 @@ check("adaptive mode compresses under pressure",
       _tight.store.stats()["demoted"] > 0,
       "storage pressure did not trigger any demotion")
 
+print("\n-- learned scorer --")
+# P3-learned replaces P1's hand-chosen weights with a fitted model. It is
+# trained on OTHER conversations' evidence labels, but at inference it must see
+# text and speaker only -- otherwise it is the §13 leak with extra steps. The
+# invariance test therefore has to cover this scorer too, not just P1.
+try:
+    import numpy as _np
+    from sklearn.linear_model import LogisticRegression as _LR
+    from memgate.scoring import LearnedScorer, features as _feat
+    from memgate.utils import embed as _emb
+
+    _X = _np.array([_feat(t.text, t.speaker) for t in turns], dtype=float)
+    _y = _np.array([1 if t.fact_id else 0 for t in turns])
+    _m = _LR(max_iter=1000, class_weight="balanced").fit(_X, _y)
+    _sc = LearnedScorer(model=_m, use_embedding=False)
+
+    check("learned scorer is label-blind at inference",
+          _tier_fingerprint(turns, scorer=_sc, store_budget=600,
+                            write_mode="adaptive")
+          == _tier_fingerprint(blind, scorer=_sc, store_budget=600,
+                               write_mode="adaptive"),
+          "the learned scorer path is reading fact_id/is_filler")
+
+    _a, _l = _sc.score("We moved the bakery deadline to April 2.")
+    check("learned scorer returns a bounded utility and a label",
+          0.0 <= _a <= 1.0 and isinstance(_l, str))
+except ImportError:
+    print("  SKIP  sklearn not installed")
+
 print("\n-- reproducibility --")
 a = run_policy(MemGatePolicy(), turns, questions, 800)
 b = run_policy(MemGatePolicy(), turns, questions, 800)

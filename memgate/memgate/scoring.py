@@ -141,7 +141,12 @@ class LLMJudgeScorer(Scorer):
 
 
 class DistilledScorer(Scorer):
-    """P3 — stub. Trained on P2's labels to reach P2 quality at P1 cost."""
+    """P3 — stub. Trained on P2's labels to reach P2 quality at P1 cost.
+
+    Still a stub because P2 is blocked: distilling P2 requires P2's labels, and
+    P2 requires a generative model this project does not have offline. See
+    `LearnedScorer` for the same slot filled by a different supervision source.
+    """
     name = "P3-distilled"
 
     def __init__(self, model=None):
@@ -149,3 +154,104 @@ class DistilledScorer(Scorer):
 
     def score(self, text, speaker="user"):
         raise NotImplementedError("P3 lands in Phase 3 — trained on P2 labels.")
+
+
+# --------------------------------------------------------------- P3-learned
+# Feature names, in the order `features()` emits them. Kept explicit so the
+# fitted coefficients can be read back and reported -- a learned scorer that
+# cannot be inspected is a worse research object than the heuristic it replaces.
+FEATURE_NAMES = (
+    "n_words", "n_chars", "has_digit", "has_month", "has_money", "has_proper",
+    "is_question", "ends_period", "durable_hits", "correction_hint",
+    "is_filler", "speaker_assistant", "frac_stop", "n_caps", "has_time",
+)
+
+TIME_PAT = re.compile(r"\b\d{1,2}\s?(am|pm)\b|\b\d{1,2}:\d{2}\b", re.I)
+
+
+def features(text: str, speaker: str = "user"):
+    """Hand features for one turn. Cheap, inspectable, and label-free.
+
+    These are the SAME signals the P1 heuristic uses, but handed to the model as
+    evidence rather than combined by hand-chosen weights. That is the whole
+    experiment: P1 fixes the weights by intuition, P3-learned fits them. If the
+    fitted version does no better, the heuristic's weights were already fine and
+    the scorer is not the bottleneck after all.
+    """
+    t = text.strip()
+    w = words(t)
+    ws = set(w)
+    n = max(1, len(w))
+    return [
+        len(w),
+        len(t),
+        1.0 if NUM_PAT.search(t) else 0.0,
+        1.0 if MONTH_PAT.search(t) else 0.0,
+        1.0 if MONEY_PAT.search(t) else 0.0,
+        1.0 if PROPER_PAT.search(t) else 0.0,
+        1.0 if t.endswith("?") else 0.0,
+        1.0 if t.endswith(".") else 0.0,
+        float(len(ws & DURABLE_HINTS)),
+        1.0 if (ws & CORRECTION_HINTS) else 0.0,
+        1.0 if (FILLER_PAT.match(t) or len(w) <= 2) else 0.0,
+        1.0 if speaker == "assistant" else 0.0,
+        sum(1 for x in w if len(x) <= 3) / n,
+        sum(1 for c in t if c.isupper()),
+        1.0 if TIME_PAT.search(t) else 0.0,
+    ]
+
+
+class LearnedScorer(Scorer):
+    """P3-learned — a fitted salience model in place of hand-tuned weights.
+
+    Fills the P3 slot ("a scorer trained rather than written") from a different
+    supervision source than the build plan assumed. P2's LLM labels are
+    unavailable offline, so the target here is DISTANT SUPERVISION from the
+    benchmark: was this turn ever cited as evidence by a question?
+
+    TRAIN/TEST DISCIPLINE -- read before trusting any number this produces.
+
+    The label is derived from ground truth, so it may only ever be seen for
+    conversations the model is not evaluated on. Training is leave-one-
+    conversation-out: to score conv-26, the model is fitted on the other nine
+    and has never seen a single conv-26 turn or label. At inference `score()`
+    sees text and speaker and nothing else -- no fact_id, no evidence set, no
+    question -- so the label-invariance test in test_memgate.py covers this
+    scorer exactly as it covers P1, and it must keep passing.
+
+    WHAT IT DOES AND DOES NOT SHOW. A deployed agent has no future questions, so
+    this is not a drop-in component; it is a measurement of the HEADROOM a
+    learned scorer has over a hand-written one, given good supervision and no
+    test-time leakage. That is the §4 research question -- how much of the gap a
+    better decision policy can recover -- answered for the strongest scorer this
+    project can build offline. Treat it as an informed upper bound on P2/P3,
+    strictly below the Oracle bound and strictly above P1.
+    """
+    name = "P3-learned"
+
+    def __init__(self, model=None, use_embedding=True, embedder=None):
+        self.model = model                # fitted sklearn estimator
+        self.use_embedding = use_embedding
+        self._embed = embedder            # injected to avoid a circular import
+
+    def score(self, text, speaker="user"):
+        if self.model is None:
+            raise RuntimeError("LearnedScorer is unfitted — see train_scorer.py")
+        x = features(text, speaker)
+        if self.use_embedding and self._embed is not None:
+            x = list(x) + list(self._embed(text))
+        p = float(self.model.predict_proba([x])[0][1])
+        # Reuse P1's label vocabulary so routing, supersession and the type
+        # counters behave identically -- only the utility number changes, which
+        # is what makes this a clean single-component swap.
+        t = text.strip()
+        w = set(words(t))
+        if FILLER_PAT.match(t) or len(words(t)) <= 2:
+            label = "filler"
+        elif (w & CORRECTION_HINTS) and (NUM_PAT.search(t) or MONTH_PAT.search(t)):
+            label = "update"
+        elif t.endswith("?"):
+            label = "query"
+        else:
+            label = "fact" if p >= 0.5 else "context"
+        return max(0.0, min(1.0, p)), label

@@ -38,7 +38,8 @@ class ThreeTierStore:
                  supersede: bool = True,
                  store_budget: Optional[int] = None,
                  demote_on_pressure: bool = True,
-                 scored_eviction: bool = True):
+                 scored_eviction: bool = True,
+                 cost_mode: str = "tokens", vector_bytes: int = 1536):
         self.short_capacity = short_capacity
         self.working_capacity_tokens = working_capacity_tokens
         self.promote_threshold = promote_threshold
@@ -54,6 +55,20 @@ class ThreeTierStore:
         self.store_budget = store_budget
         self.demote_on_pressure = demote_on_pressure   # off = drop instead
         self.scored_eviction = scored_eviction         # off = FIFO ablation
+        # What the storage budget is DENOMINATED in.
+        #
+        #   "tokens"  text only -- what the sweep in §23 charges for
+        #   "bytes"   text bytes + one embedding vector per retained ITEM
+        #
+        # The second is not a refinement, it can invert the ranking. A LoCoMo
+        # turn averages ~32 tokens (~130 bytes of text) but carries a 384-d
+        # float32 vector at 1536 bytes, so under byte accounting the embedding
+        # outweighs the text by roughly 12x and the binding cost becomes the
+        # NUMBER OF ITEMS, not their length. A policy that merges many turns
+        # into one gist pays one vector for all of them; a policy that keeps
+        # turns whole pays one vector each. Token accounting cannot see that.
+        self.cost_mode = cost_mode
+        self.vector_bytes = vector_bytes
         self._enforcing = False
         self.evicted = 0
         self.demoted = 0
@@ -342,9 +357,25 @@ class ThreeTierStore:
         next enforcement pass, and a retired record is not storage a real
         system keeps paying for.
         """
-        return (sum(count_tokens(i.text) for i in self.short)
-                + sum(count_tokens(i.text) for i in self.working)
-                + sum(count_tokens(i.text) for i in self.long if i.is_active))
+        return sum(count_tokens(i.text) for i in self._held())
+
+    def _held(self):
+        """Every item the store is physically paying for."""
+        return (list(self.short) + list(self.working)
+                + [i for i in self.long if i.is_active])
+
+    def _cost(self, it: MemoryItem) -> int:
+        """What one item costs against the storage budget."""
+        if self.cost_mode == "bytes":
+            # Tier 1 is a raw turn buffer with no vector; Tiers 2 and 3 are
+            # embedded and so pay for one.
+            vec = self.vector_bytes if it.embedding is not None else 0
+            return len(it.text.encode("utf-8")) + vec
+        return count_tokens(it.text)
+
+    def stored_cost(self) -> int:
+        """Total held, in whatever unit the budget is denominated in."""
+        return sum(self._cost(i) for i in self._held())
 
     def _forget_key(self, it: MemoryItem):
         """Eviction order: the item with the lowest key is forgotten first.
@@ -382,7 +413,17 @@ class ThreeTierStore:
         gist = (informative_head(it.text, self.merge_head_words)
                 if self.informative_compress
                 else " ".join(it.text.split()[:self.merge_head_words]))
-        if count_tokens(gist) >= count_tokens(it.text):
+        if self.cost_mode == "bytes":
+            # A demoted gist still carries its own vector, so shortening the
+            # text only pays if the text was the expensive part. Under byte
+            # accounting on short turns it usually is not, and demotion then
+            # costs MORE than it saves -- which the check has to catch, or
+            # enforcement loops without making progress.
+            shrank = (len(gist.encode("utf-8")) + self.vector_bytes
+                      < len(it.text.encode("utf-8")) + self.vector_bytes)
+        else:
+            shrank = count_tokens(gist) < count_tokens(it.text)
+        if not shrank:
             return False                      # nothing gained; let it go
         self.demoted += 1
         self.working.append(MemoryItem(
@@ -424,7 +465,7 @@ class ThreeTierStore:
             self._consolidate_if_needed()
 
             guard = 0
-            while self.stored_tokens() > self.store_budget:
+            while self.stored_cost() > self.store_budget:
                 guard += 1
                 if guard > 8192:              # cannot happen; never spin
                     break
@@ -456,4 +497,6 @@ class ThreeTierStore:
             "demoted": self.demoted,
             "reclaimed": self.reclaimed,
             "stored_tokens": self.stored_tokens(),
+            "stored_cost": self.stored_cost(),
+            "cost_mode": self.cost_mode,
         }

@@ -45,6 +45,12 @@ def run_policy(policy, turns: List[Turn], questions: List[Question],
     hits, soft_sum, token_counts, latencies = 0, 0.0, [], []
     ans_n = ans_hits = 0
     by_cat = {}
+    # Per-question outcomes, kept so significance testing can pair policies on
+    # the same questions. Aggregates alone cannot support a paired test: two
+    # policies scoring 26.3% and 18.3% may agree on almost every question or
+    # disagree on all of them, and the confidence interval differs enormously
+    # between those cases.
+    detail = []
     for q in questions:
         ev = set(q.evidence_ids)
         t1 = time.perf_counter()
@@ -69,10 +75,15 @@ def run_policy(policy, turns: List[Turn], questions: List[Question],
         # merely a pointer to the turn that once held it? A Tier 2 summary is
         # truncated but keeps its fact_id, so it scores a strict hit even when
         # the answer was cut. This is the check that catches that.
+        ans_ok = None
         if q.answer_recoverable:
             ans_n += 1
-            if set(answer_tokens(q.answer)) <= set(answer_tokens(ctx.text)):
+            ans_ok = set(answer_tokens(q.answer)) <= set(answer_tokens(ctx.text))
+            if ans_ok:
                 ans_hits += 1
+        detail.append({"strict": bool(strict), "soft": soft,
+                       "answer": ans_ok, "category": q.category,
+                       "tokens": ctx.tokens})
 
     n = len(questions)
     lat_sorted = sorted(latencies)
@@ -95,6 +106,7 @@ def run_policy(policy, turns: List[Turn], questions: List[Question],
         "p95_latency_ms": lat_sorted[int(0.95 * (len(lat_sorted) - 1))] if lat_sorted else 0,
         "ingest_ms": ingest_ms,
         "by_category": by_cat,
+        "detail": detail,
         "stats": policy.stats(),
     }
 

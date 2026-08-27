@@ -1,5 +1,5 @@
 # Downloaded artefacts — reproducible, not source. See memgate/README.md.
-# all-MiniLM-L6-v2, ~90 MB
+# all-MiniLM-L6-v2 (~90 MB) and Qwen2.5-0.5B-Instruct (~942 MB)
 memgate/models/
 # locomo10.json, 2.7 MB, from snap-research/locomo
 memgate/data/locomo/
