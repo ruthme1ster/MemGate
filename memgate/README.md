@@ -9,7 +9,9 @@ conversations stay inside a fixed token budget without losing what matters.
 
 ---
 
-## Status: Step 4 — storage-budget frontier
+## Status: results-complete
+
+See `../REPORT.md` for the paper-ready writeup.
 
 > **Earlier Step 0 numbers were withdrawn.** The policy was reading `fact_id`,
 > the ground-truth evaluation label, when deciding what to keep. That leak was
@@ -18,11 +20,19 @@ conversations stay inside a fixed token budget without losing what matters.
 
 ```bash
 cd memgate
-python3 test_memgate.py           # 57 tests
+python3 test_memgate.py           # 61 tests
 python3 run_locomo.py             # LoCoMo — the real benchmark
 python3 run_storage_sweep.py      # the storage-budget frontier (§23)
 python3 run_experiment.py         # synthetic sanity set
 python3 diagnose.py               # why the policy misses what it misses
+
+python3 run_scaling.py            # compression ratio to 182x
+python3 run_cost_model.py         # byte-denominated storage (charges for the index)
+python3 run_significance.py       # bootstrap CIs + exact McNemar
+python3 train_scorer.py           # the learned scorer
+python3 run_judge_eval.py         # the scorer comparison, with clustered CIs
+python3 run_endtask.py            # end-task accuracy through a real reader
+python3 make_figures.py           # publication figures
 
 python3 run_ablations.py --budget 2048 --store-budget 4096 --adaptive
 MEMGATE_EMBEDDER=hash python3 run_locomo.py    # embedder ablation
@@ -58,9 +68,32 @@ curl -L --retry 20 -C - -o models/all-MiniLM-L6-v2/model.safetensors \
   "$B/model.safetensors"   # must end up exactly 90868376 bytes
 ```
 
+The reader/judge models are fetched the same way, into
+`models/Qwen2.5-0.5B-Instruct` and `models/Qwen2.5-1.5B-Instruct-4bit`.
+`memgate/llm_judge.py::default_model()` prefers whichever local copy has
+complete weights — it opens every safetensors header rather than trusting the
+filename, because a part-downloaded file sits on disk at full size and fails
+only at load time.
+
 Without them everything still runs: the loader errors only if you call
 `load_locomo()`, and the embedder falls back to hashing bag-of-words with a
 warning on stderr.
+
+### Offline by default
+
+Importing `memgate` sets `HF_HUB_OFFLINE=1` when `models/` exists. The loaders
+are Hub-aware even when handed a local path, and a stalled connection turns a
+90-second test suite into a 14-minute hang against an idle socket — but the
+real reason is that a run which can silently fetch a model is a run whose
+inputs are not pinned. Two tests hold the line: that the import pins it, and
+that MiniLM still resolves once pinned (if it did not, every result would be
+quietly relabelled as the hashing baseline).
+
+To add a new model deliberately:
+
+```bash
+MEMGATE_ALLOW_HUB=1 python3 precompute_judge.py
+```
 
 ## Results — LoCoMo (10 conversations, 5882 turns, 1527 questions)
 
@@ -116,6 +149,22 @@ what the Step 2 abstractive summariser exists to claim.
 The gap this project exists to close is now measured in our own harness:
 **Oracle 100% at 65 tokens vs P1 15% at 2055** — entirely memory selection, not
 reasoning.
+
+## Headline result
+
+Under a bounded store, **choosing which turns to forget is worth +8.7
+answer-recall points** over forgetting oldest-first — at identical storage,
+identical fidelity and identical retrieval, so the gap is the decision policy
+and nothing else (95% CI [+4.8, +14.3] clustered by conversation, McNemar
+p = 1.1e-4).
+
+**Compressing an evicted turn instead of dropping it loses 6.7 points.** The
+rate–distortion prediction that compression must eventually win is falsified to
+182x compression. Charging for the embedding index inverts the ranking below
+~40 KiB, where a policy with no index at all wins.
+
+> We do **not** claim an evidence-recall improvement over RAG: +1.96 points does
+> not survive clustering (p = 0.16). Only the answer-recall claim stands.
 
 ## Results — the storage budget, and why it changes the answer
 
@@ -270,7 +319,7 @@ memgate/
   run_ablations.py     component attribution
   run_experiment.py    synthetic sanity set
   diagnose.py          miss analysis by cause
-  test_memgate.py      57 tests
+  test_memgate.py      61 tests
   data/locomo/         locomo10.json (2.7 MB)
   models/              vendored all-MiniLM-L6-v2
 ```
@@ -310,16 +359,56 @@ record and retiring the wrong one:
 | MiniLM 384d | **0.865** | 0.741 | Correct, thresholds 0.50–0.70 |
 | Hashing BoW | 0.500 | **0.583** | Wrong — ranking inverted |
 
+## Results — the scorer is learnable
+
+Leave-one-conversation-out: the model scoring a conversation never saw it in
+training, and at inference sees text and speaker only.
+
+| Scorer | AUC | Answer recall |
+|---|---|---|
+| P1 heuristic (hand-tuned) | — | 26.3% |
+| P3 learned, hand features | 0.746 | 27.7% |
+| **P3 learned + MiniLM** | **0.793** | **31.5%** |
+
+The fitted weights say something the heuristic never encoded: **turn length is
+the strongest single predictor of evidence-worthiness.** Not deployable — a live
+agent has no future questions — so it bounds the headroom of a learned policy.
+
+## Results — the LLM judge does not earn its cost
+
+`run_judge_eval.py` holds policy, storage budget, retrieval and compression
+fixed at the §23 winner (P1-S select, context 2048, store 4096) and varies
+**only the scorer**. Any difference is the scorer.
+
+| Scorer | Evidence | Answer | vs P1 | 95% CI (clustered) |
+|---|---|---|---|---|
+| P0 recency (no content judgement) | 12.6% | 25.6% | −11.2 | [−17.2, −6.2] |
+| **P1 heuristic (regex + shallow NER)** | 19.8% | **36.8%** | — | — |
+| P2 LLM judge (Qwen2.5-0.5B) | 14.0% | 30.9% | **−5.9** | [−10.8, −1.8] |
+| P3 learned (LOCO, bound) | 33.4% | 48.3% | +11.5 | [+4.9, +17.9] |
+
+Three readings, all significant under conversation-level clustering:
+
+1. **Scoring at all is worth +11.2 points** over unscored recency. The decision
+   point is load-bearing, which is what makes the rest of the table worth
+   reading.
+2. **The LLM judge loses to the regex by 5.9 points** — and the interval
+   excludes zero, so this is a real loss and not a wash. It costs ~15 minutes of
+   GPU per corpus against the heuristic's microseconds. A 0.5B model rating
+   turns *in isolation* has no view of the conversation, and salience is not a
+   property of a turn on its own.
+3. **The headroom is real** (+11.5 to the learned bound), so the ceiling that
+   P2 failed to reach is genuinely there — the scorer is the bottleneck, and a
+   small instruct model prompted per-turn is the wrong instrument for it.
+
 ## Next
 
-1. **Find the second crossover** — push S below 512, or move to a benchmark
-   with longer conversations than LoCoMo's ~19K tokens (LongMemEval), to reach
-   the regime where the selected subset no longer fits verbatim and compression
-   must start paying.
-2. **P2 (LLM judge)** — now the highest-value work, and its payoff is
-   quantified in advance: scored eviction is already worth −5.0 strict against
-   FIFO, so a better scorer attacks a component demonstrably load-bearing.
-3. **Charge for the embeddings.** `stored_tokens` counts text only; a 384-d
-   float32 vector per retained item is real storage that verbatim policies pay
-   on every turn. A byte-denominated budget may shift the comparison.
-4. End-task accuracy through a real model — context recall is its ceiling.
+1. ~~Find the second crossover~~ — done: falsified to 182x (`run_scaling.py`).
+2. ~~P2 (LLM judge)~~ — done: a local Qwen2.5-0.5B judge (`memgate/judge.py`).
+3. ~~Charge for the embeddings~~ — done: `cost_mode="bytes"` (`run_cost_model.py`).
+4. **End-task accuracy through a real model** — the single most valuable
+   remaining experiment. Context recall is its ceiling, and the local model now
+   makes it reachable.
+5. **Abstractive compression** — the negative result is stated for *extractive*
+   compression; a rewriting summariser may retain more per token.
+6. **A genuinely long benchmark** (LongMemEval) rather than concatenated streams.

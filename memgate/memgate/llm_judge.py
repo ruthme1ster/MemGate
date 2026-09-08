@@ -50,7 +50,51 @@ os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 
 from .scoring import Scorer, HeuristicScorer
 
-DEFAULT_MODEL = "mlx-community/Qwen2.5-1.5B-Instruct-4bit"
+# Preference order: a vendored local copy first, then the Hub. Same pattern as
+# utils.py uses for MiniLM, and for the same reason -- Hub downloads have failed
+# repeatedly on this connection, so a verified local copy is what makes a run
+# offline and reproducible.
+_MODELS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models")
+LOCAL_CANDIDATES = ("Qwen2.5-1.5B-Instruct-4bit", "Qwen2.5-0.5B-Instruct")
+HUB_MODEL = "mlx-community/Qwen2.5-1.5B-Instruct-4bit"
+
+
+def _weights_ok(d: str) -> bool:
+    """True only if every safetensors shard in `d` opens.
+
+    Presence is not enough. A part-downloaded file sits on disk at full name and
+    fails at load time with InvalidHeaderDeserialization -- exactly how a
+    resumed MiniLM download silently degraded an entire results table (§16.3).
+    Reading the header is cheap and catches truncation without needing to know
+    the expected byte size.
+    """
+    try:
+        from safetensors import safe_open
+    except ImportError:
+        return True                      # cannot verify; let the loader decide
+    shards = [f for f in os.listdir(d) if f.endswith(".safetensors")]
+    if not shards:
+        return False
+    for f in shards:
+        try:
+            with safe_open(os.path.join(d, f), framework="numpy"):
+                pass
+        except Exception:
+            return False
+    return True
+
+
+def default_model() -> str:
+    """First local model with complete weights, else the Hub id."""
+    for name in LOCAL_CANDIDATES:
+        d = os.path.join(_MODELS_DIR, name)
+        if os.path.isfile(os.path.join(d, "config.json")) and _weights_ok(d):
+            return d
+    return HUB_MODEL
+
+
+DEFAULT_MODEL = None   # resolved lazily so a model added later is picked up
 
 SYSTEM = ("You decide what an AI assistant should remember from a conversation. "
           "Durable facts, decisions, preferences, plans, names, dates and "
@@ -88,9 +132,9 @@ class MLXJudgeScorer(Scorer):
     """
     name = "P2-llm-judge"
 
-    def __init__(self, model_name: str = DEFAULT_MODEL, cache: bool = True,
+    def __init__(self, model_name: str = None, cache: bool = True,
                  max_chars: int = 600):
-        self.model_name = model_name
+        self.model_name = model_name or default_model()
         self.max_chars = max_chars
         self._model = None
         self._tok = None

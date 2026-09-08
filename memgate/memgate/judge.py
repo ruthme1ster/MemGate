@@ -19,10 +19,24 @@ TWO DESIGN CHOICES WORTH DEFENDING
    integer puts hundreds of turns on the same rung and leaves their order to the
    tiebreak, whereas the expectation separates them.
 
-2. FLOAT32, NOT FLOAT16. fp16 with left-padding produced NaN on MPS for exactly
-   the short inputs (the ones padded most), which would have silently scored
-   every filler turn as NaN. float32 is both stable and, measured here, faster.
-   Batches are length-sorted so padding is minimal.
+2. RIGHT PADDING, NOT LEFT. Batched scoring first returned NaN for exactly the
+   short inputs -- the fillers -- which would have silently mis-scored every
+   "ok thanks!" in the corpus. The instinct is to blame precision, and fp32 was
+   tried first; it did not fix it. The cause is the MASK. Left padding puts the
+   pad tokens FIRST, so a short sequence has leading rows that are entirely
+   masked, the attention softmax sees an all -inf row, and Qwen2 on MPS returns
+   NaN. Right padding leaves no row fully masked; the last real token is then at
+   `attention_mask.sum(1) - 1` instead of at -1.
+
+   With the mask fixed, bfloat16 is safe and 6.8x faster than float32 here
+   (2.78 vs 0.41 turns/s) for the same score range. Batches are length-sorted so
+   padding stays minimal, and `lm_head` is applied only to the gathered final
+   hidden state -- projecting every position to a 151936-token vocabulary
+   overflows MPS at 4.78 GB.
+
+   The NaN guard in `score_many` is deliberate and stays: it is what surfaced
+   this at all, and a scorer that silently returns NaN for every filler turn
+   would have quietly inverted the experiment.
 
 CALIBRATION. The raw scores are compressed into roughly [0.12, 0.27] rather than
 spread over [0,1]. That is harmless for the SELECT policy, which only ever ranks
@@ -60,10 +74,12 @@ class LocalLLMJudge:
     """Batch salience scoring against a local causal LM. Loads torch lazily."""
 
     def __init__(self, model_dir: str = DEFAULT_MODEL, device: str = "auto",
-                 max_chars: int = 400, batch_size: int = 32):
+                 max_chars: int = 400, batch_size: int = 32,
+                 dtype: str = "float32"):
         self.model_dir = model_dir
         self.max_chars = max_chars
         self.batch_size = batch_size
+        self.dtype = dtype
         self._device = device
         self._tok = None
         self._model = None
@@ -94,12 +110,26 @@ class LocalLLMJudge:
                    else "cuda" if torch.cuda.is_available() else "cpu")
         self._torch = torch
         self._tok = AutoTokenizer.from_pretrained(self.model_dir)
-        self._tok.padding_side = "left"
+        # RIGHT padding, with a gather at each sequence's true last token.
+        #
+        # Left padding is the usual choice for batched decoding, and it is what
+        # broke here: with left padding the first rows of a short sequence are
+        # fully masked, the attention softmax sees an all -inf row, and Qwen2 on
+        # MPS returns NaN. It struck exactly the short turns -- the fillers --
+        # so it would have scored every "ok thanks!" as NaN. float32 did not fix
+        # it; the mask is the cause, not the precision.
+        #
+        # Right padding puts the pad tokens AFTER the real ones, so no row is
+        # ever fully masked. The last real token is then at
+        # attention_mask.sum(1) - 1 rather than at -1.
+        self._tok.padding_side = "right"
         if self._tok.pad_token is None:
             self._tok.pad_token = self._tok.eos_token
         # float32: fp16 + left padding produced NaN on MPS for short inputs.
+        dt = {"float32": torch.float32, "bfloat16": torch.bfloat16,
+              "float16": torch.float16}[self.dtype]
         self._model = AutoModelForCausalLM.from_pretrained(
-            self.model_dir, torch_dtype=torch.float32).to(dev).eval()
+            self.model_dir, torch_dtype=dt).to(dev).eval()
         self._dev = dev
         self._digits = [self._tok.encode(str(i), add_special_tokens=False)[0]
                         for i in range(10)]
@@ -109,7 +139,8 @@ class LocalLLMJudge:
             [{"role": "user", "content": PROMPT + text[:self.max_chars]}],
             add_generation_prompt=True, tokenize=False)
 
-    def score_many(self, texts: Sequence[str], verbose: bool = False) -> List[float]:
+    def score_many(self, texts: Sequence[str], verbose: bool = False,
+                   save_every: int = 0) -> List[float]:
         """Score every text, using and filling the cache."""
         todo = [t for t in dict.fromkeys(texts) if _key(t) not in self.cache]
         if todo:
@@ -121,8 +152,17 @@ class LocalLLMJudge:
                 chunk = todo[i:i + self.batch_size]
                 enc = self._tok([self._prompt(t) for t in chunk],
                                 return_tensors="pt", padding=True).to(self._dev)
+                # Run the base transformer and apply lm_head ONLY at the last
+                # real token of each sequence. Calling the full model would
+                # project every position to the 151936-token vocabulary --
+                # batch x seq x vocab x 4 B, which overflowed at 4.78 GB. We
+                # need exactly one distribution per sequence, so projecting one
+                # hidden vector each is both correct and ~seq_len times cheaper.
+                last = enc["attention_mask"].sum(1) - 1          # true final token
                 with torch.no_grad():
-                    lg = self._model(**enc).logits[:, -1, :].float()
+                    h = self._model.model(**enc).last_hidden_state
+                    h_last = h[torch.arange(h.shape[0], device=h.device), last, :]
+                    lg = self._model.lm_head(h_last).float()
                 p = torch.softmax(lg[:, self._digits], dim=-1)
                 sc = (p * torch.arange(10, device=p.device,
                                        dtype=p.dtype)).sum(-1) / 9.0
@@ -132,8 +172,13 @@ class LocalLLMJudge:
                     if v != v:
                         raise RuntimeError(f"judge produced NaN for: {t[:60]!r}")
                     self.cache[_key(t)] = float(v)
-                if verbose and (i // self.batch_size) % 10 == 0:
-                    print(f"    judged {i + len(chunk)}/{len(todo)}", flush=True)
+                done = i + len(chunk)
+                if verbose:
+                    print(f"    judged {done}/{len(todo)}", flush=True)
+                # This run takes ~90 minutes. Checkpointing means a crash costs
+                # one batch, not the whole thing.
+                if save_every and done % save_every < self.batch_size:
+                    self.save_cache()
         return [self.cache[_key(t)] for t in texts]
 
     def score_one(self, text: str) -> float:

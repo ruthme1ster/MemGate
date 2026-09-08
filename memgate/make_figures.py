@@ -190,10 +190,68 @@ def fig_cost():
     plt.close(fig); print("  fig4_cost_model")
 
 
+def fig_endtask():
+    """Ceiling vs realised: how much of the recall gap a reader converts.
+
+    Two bars per arm rather than one. Accuracy alone would invite the reading
+    that the memory policy caused the whole difference; showing the ceiling
+    beside it separates what the policy delivered to the prompt from what the
+    reader managed to do with it. The closed-book line is the floor every arm
+    has to clear to have contributed anything at all.
+    """
+    rows = load("endtask.csv")
+    if not rows:
+        return
+    floor = next((float(r["accuracy"]) for r in rows
+                  if r["arm"].startswith("closed-book")), None)
+    rows = [r for r in rows if not r["arm"].startswith("closed-book")]
+    if not rows:
+        return
+    key = {"P0": "p0", "RAG": "rag", "P1-A": "compress", "P1-S": "select",
+           "Oracle": "oracle"}
+    labels = [r["arm"].replace(" sliding-window", "").replace(" store-all", "")
+              for r in rows]
+    ceil = [float(r["answer_recall"]) for r in rows]
+    acc = [float(r["accuracy"]) for r in rows]
+    cols = [C[key.get(r["arm"].split()[0], "p0")] for r in rows]
+
+    fig, ax = plt.subplots(figsize=(5.4, 3.2))
+    x = range(len(rows))
+    w = 0.36
+    ax.bar([i - w/2 for i in x], ceil, w, color=GRID, edgecolor=MUTED,
+           linewidth=0.6, label="ceiling — answer reached the context")
+    for i, (a, c) in enumerate(zip(acc, cols)):
+        ax.bar(i + w/2, a, w, color=c,
+               label="realised — reader answered correctly" if i == 0 else None)
+    for i, (c, a) in enumerate(zip(ceil, acc)):
+        if c:
+            ax.text(i + w/2, a + 1.0, f"{a/c*100:.0f}%", ha="center",
+                    fontsize=7.5, color=INK, weight="bold")
+    if floor is not None:
+        ax.axhline(floor, color=INK, linestyle="--", linewidth=0.9)
+        # Anchored left: Oracle is the tallest bar and sits on the right, so a
+        # right-anchored label lands on top of it.
+        ax.text(-0.45, floor + 1.4, f"closed-book floor {floor:.1f}%",
+                ha="left", fontsize=7.5, color=INK)
+    ax.set_xticks(list(x)); ax.set_xticklabels(labels, fontsize=8)
+    style(ax, "", "% of answer-recoverable questions",
+          "What a reader converts from the context it is given")
+    ax.legend(fontsize=7.5, loc="upper left")
+    fig.text(0.0, -0.10,
+             "Percentages above the solid bars are the conversion rate: accuracy as a\n"
+             "share of its own ceiling. Reader Qwen2.5-1.5B-Instruct-4bit, greedy,\n"
+             "context 2048 / store 4096, scored on the 715 answer-recoverable questions.",
+             fontsize=7, color=MUTED)
+    fig.tight_layout()
+    out = os.path.join(FIGS, "fig5_endtask")
+    fig.savefig(out + ".png"); fig.savefig(out + ".pdf")
+    plt.close(fig); print("  fig5_endtask")
+
+
 def main():
     os.makedirs(FIGS, exist_ok=True)
     print(f"\nwriting figures to {FIGS}")
-    fig_storage(); fig_scaling(); fig_scorer(); fig_cost()
+    fig_storage(); fig_scaling(); fig_scorer(); fig_cost(); fig_endtask()
     print("done")
     return 0
 

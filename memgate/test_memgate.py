@@ -318,6 +318,22 @@ try:
 except ImportError:
     print("  SKIP  sklearn not installed")
 
+print("\n-- offline reproducibility --")
+# A run that can silently fetch a model is a run whose inputs are not pinned,
+# and this project has already lost a results table to a half-downloaded
+# MiniLM (§16.3). Two things must hold: importing the package pins the loaders
+# offline, and the embedder still resolves to MiniLM once it is pinned. The
+# second is the one that matters -- if offline mode made MiniLM unloadable the
+# fallback would quietly relabel every result as hashing bag-of-words.
+import os as _os
+from memgate.utils import backend_info as _bi
+check("import pins the HF loaders offline",
+      _os.environ.get("HF_HUB_OFFLINE") == "1",
+      "set MEMGATE_ALLOW_HUB=1 only when deliberately adding a model")
+check("MiniLM still resolves with the Hub pinned off",
+      _bi()["embedder"].startswith("all-MiniLM"),
+      f"fell back to {_bi()['embedder']} -- results would be mislabelled")
+
 print("\n-- reproducibility --")
 a = run_policy(MemGatePolicy(), turns, questions, 800)
 b = run_policy(MemGatePolicy(), turns, questions, 800)

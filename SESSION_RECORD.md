@@ -2,7 +2,7 @@
 
 **Capstone Project** · SVKM's NMIMS, Indore Campus
 Simar Singh Khanuja & Yash Ramchandani
-Session 1: 12 August 2026 · Session 2: 17 August 2026 · Session 3: 24 August 2026
+Session 1: 12 August 2026 · Session 2: 17 August 2026 · Session 3: 24 August 2026 · Session 4: 27 August 2026
 
 A complete record of what was discussed, decided, built and found in these
 working sessions. Written so it can be picked up cold later.
@@ -38,6 +38,18 @@ working sessions. Written so it can be picked up cold later.
 >   whose text it discarded.
 >
 > Do not present tiered compression as validated. Full detail in **§23**.
+>
+> ## ⚠ SESSION 4 — the project is now results-complete
+>
+> §24 closes every open item. Headline claims now carry clustered confidence
+> intervals, and **one earlier claim did not survive**: the select-vs-RAG gain
+> on *evidence* recall is **not significant** (p = 0.16). The *answer*-recall
+> gain is (+8.67, CI [+4.77, +14.27]). Quote the answer metric only.
+>
+> The rate-distortion prediction from §23.4 — that compression must eventually
+> beat selection — is **falsified to 182x compression** (§24.1).
+>
+> `REPORT.md` at the project root is the paper-ready writeup.
 
 ---
 
@@ -1239,3 +1251,248 @@ python3 run_ablations.py --budget 2048 --store-budget 4096 --adaptive
 
 Results: `results/storage_sweep.csv` (adds `stored_tokens`, `max_stored`,
 `strict_per_kstored`).
+
+---
+
+# Session 4 — 27 August 2026
+
+The project is **results-complete**. Every item §23.8 left open is closed, the
+two components blocked on tooling are unblocked, and every headline number now
+carries a confidence interval. `REPORT.md` is the paper-ready writeup.
+
+## 24. Closing the open items
+
+### 24.1 The rate–distortion prediction is falsified (`run_scaling.py`)
+
+§23 predicted a second crossover: squeeze the store hard enough and a lossy
+record must beat no record, so compression must eventually overtake selection.
+
+Sweeping S *downward* cannot test that. By S=256 every policy sits at ~0.2%
+strict / ~2.4% answer — the regime where compression should win is **below the
+floor where anything works at all**, and the apparent crossing there is one or
+two questions, i.e. noise.
+
+**The missing axis was conversation length, not store size.** Concatenating k
+LoCoMo conversations into one stream (to 186K tokens, 5882 turns) at fixed S
+runs the compression ratio from 9× to 182×.
+
+Answer recall at S=2048:
+
+| Ratio | RAG | P1-A compress | **P1-S drop** |
+|---|---|---|---|
+| 9× | 18.3% | 23.4% | **26.3%** |
+| 18× | 10.8% | 14.7% | **18.2%** |
+| 45× | 7.8% | 11.2% | **11.7%** |
+| 91× | 4.6% | 6.0% | **8.7%** |
+
+**No crossover anywhere**, and the selection margin over RAG *widens* with
+pressure (8.0 pts at 9×, 4.1 at 91× against RAG; drop beats compress at every
+ratio). The prediction is falsified over the entire reachable range.
+
+Caveat to state: concatenated streams are **not** natural long conversations —
+each question concerns one constituent conversation, so the rest are
+distractors. It is a stress test of retention under pressure, which is the
+variable under study, not a long-dialogue benchmark. Turn ids were already
+namespaced (§14), so evidence cannot alias across conversations.
+
+### 24.2 The learned scorer (`train_scorer.py`)
+
+P2 was blocked on a generative model, so P3 was filled from the other available
+supervision: LoCoMo's own evidence sets, under **leave-one-conversation-out** —
+the model scoring conv-26 was fitted on the other nine and has never seen a
+conv-26 turn or label. At inference it sees text and speaker only, and the
+label-invariance test covers it.
+
+| Scorer | AUC | Strict | Answer |
+|---|---|---|---|
+| P1 heuristic | — | 10.9% | 26.3% |
+| P3 learned, hand features | 0.746 | 13.1% | 27.7% |
+| **P3 learned + MiniLM** | **0.793** | **17.0%** | **31.5%** |
+
+**+6.2 strict / +5.2 answer.** The fitted weights are reported, and say
+something the heuristic never encoded: **turn length is the strongest single
+predictor of evidence-worthiness**, ahead of every hand-designed cue.
+
+Not deployable — a live agent has no future questions. It **bounds the
+headroom** of a learned decision policy: Oracle above, P1 below.
+
+### 24.3 Byte-denominated storage (`run_cost_model.py`)
+
+Token accounting charges for text and gives the **embedding index away free**.
+A 384-d float32 vector is 1536 B against a turn's ~130 B of text — the index
+outweighs the content ~12×, so the binding cost becomes the **number of items**,
+not their length.
+
+Two results:
+
+1. **§23 is unit-robust.** Selection still beats compression, by +7.8 to +34.0
+   answer points. Merging (which folds many turns into one vector) does not
+   rescue compression either — it loses more content than the vector it saves.
+2. **Below ~40 KiB an embedding index cannot earn its own storage.** P0 keeps no
+   vectors and wins outright at 32 KiB (18.3% vs select's 15.1%), and is
+   overtaken by 64 KiB. That regime is **invisible** when the budget counts text
+   alone — as every accuracy-per-token number in this literature does, ours in
+   §23 included.
+
+### 24.4 Significance (`run_significance.py`)
+
+Paired bootstrap (B=10,000) clustered by conversation, plus exact McNemar.
+1527 questions from 10 conversations are **not** 1527 independent trials.
+
+| Comparison | Metric | Δ | CI (clustered) | p |
+|---|---|---|---|---|
+| P1-S vs RAG | **answer** | **+8.67** | **[+4.77, +14.27]** | 1.1e-4 |
+| P1-S vs RAG | strict | +1.96 | [−1.48, +5.52] | 0.16 **n.s.** |
+| P1-S vs P1-A | answer | +6.71 | [+4.24, +9.54] | 3.6e-5 |
+| P1-S vs P1-A | strict | −10.74 | [−13.65, −7.90] | 4.7e-20 |
+| P1-S vs P0 | answer | +18.46 | [+14.68, +23.56] | 3.8e-17 |
+
+**This corrects §23.** The strict-recall edge over RAG does **not** survive
+clustering. Quote the answer-recall result only. `harness.run_policy` now
+returns per-question `detail`, which is what makes paired testing possible.
+
+### 24.5 Figures (`make_figures.py`)
+
+Four publication figures, PNG + PDF at 300 dpi. The categorical palette was
+**validated with a checker**, not chosen by eye (lightness band, chroma floor,
+CVD separation, normal-vision floor); every series also carries a distinct
+marker shape, so identity survives colour-blind readers and grayscale printing.
+
+## 25. P2 — the local LLM judge (`memgate/judge.py`)
+
+The blocker was tooling, not design: no API key and no local generative model.
+Resolved by vendoring **Qwen2.5-0.5B-Instruct** (942 MB, verified byte size) and
+running it on the machine's own GPU (Apple MPS). Offline, free, reproducible.
+
+**No generation.** Asking for a digit and parsing it wastes an autoregressive
+loop and fails on "I'd say 7". Instead: one forward pass, read the logits at the
+final position restricted to the ten digit tokens, take the expectation
+`sum(i·p_i)/9`. Faster, cannot fail to parse, and — the real reason —
+**continuous**, so eviction ranking has no ties.
+
+**Three engineering findings worth keeping:**
+
+1. **NaN for exactly the short turns.** Batched scoring returned NaN for the
+   fillers. The instinct is precision; float32 did **not** fix it. The cause is
+   the **mask**: left padding puts pads first, a short sequence gets leading
+   rows that are entirely masked, the attention softmax sees an all-`-inf` row,
+   and Qwen2 on MPS returns NaN. Right padding + gathering at
+   `attention_mask.sum(1)-1` fixes it. **The NaN guard is what surfaced this** —
+   without it every filler would have scored NaN and silently inverted the
+   eviction order.
+2. **Right padding blew up memory** (4.78 GB): transformers then projects *every*
+   position to the 151936-token vocabulary. Fix: run the base transformer and
+   apply `lm_head` only to the gathered final hidden state.
+3. With the mask fixed, **bfloat16 is safe and 6.8× faster** than float32
+   (2.78 vs 0.41 turns/s) for the same score range.
+
+Scores are cached to disk by text hash with periodic checkpointing, so the
+~15-minute pass is paid once.
+
+## 26. Where the project stands
+
+**Results-complete.** The narrative, end to end:
+
+1. Tiered memory with forgetting is already shipped (Letta/Mem0/Zep).
+2. Measured honestly, a well-formed three-tier system scores 14.4% on LoCoMo
+   where full context scores 100% (§21).
+3. Its own ablation showed the compression machinery to be a **net loss**
+   against keeping everything — and correctly diagnosed why: storage was never
+   budgeted (§22.3).
+4. With storage budgeted, **the decision policy is worth +8.7 answer points**
+   over forgetting oldest-first at identical storage, fidelity and retrieval
+   (CI [+4.77, +14.27]) — while **compression still loses 6.7** (§23, §24.4).
+5. The crossover where compression should start paying is **not reachable**:
+   falsified to 182× (§24.1).
+6. Charging for the index inverts the ranking below ~40 KiB (§24.3).
+
+**Practical guidance: keep a scored subset whole; do not compress everything.
+And denominate the budget in bytes, including the index.**
+
+### Still open
+
+* **End-task accuracy** — we measure whether evidence reached the context, which
+  is the *ceiling* on accuracy, not accuracy. The local model now makes this
+  reachable; it is the single most valuable remaining experiment.
+* **Abstractive compression** — the negative result is stated for *extractive*
+  compression. A rewriting summariser might retain more per token.
+* **A genuinely long benchmark** (LongMemEval) rather than concatenated streams.
+* **Online learning** of the eviction policy, which would make a learned scorer
+  deployable.
+
+## 27. How to run (updated)
+
+```bash
+cd ~/Documents/Capstone\ Project/memgate
+python3 test_memgate.py          # 59 passed
+python3 run_locomo.py            # §21 context-budget frontier
+python3 run_storage_sweep.py     # §23 storage budget
+python3 run_scaling.py           # §24.1 compression ratio to 182x
+python3 train_scorer.py          # §24.2 learned scorer
+python3 run_cost_model.py        # §24.3 byte accounting
+python3 run_significance.py      # §24.4 bootstrap + McNemar
+python3 precompute_judge.py      # §25 P2 judge scores (~15 min, cached)
+python3 make_figures.py          # §24.5 figures
+```
+
+`REPORT.md` (project root) is the paper-ready writeup.
+
+## 28. The P2 judge, actually measured — and it loses
+
+§25 built the judge; it had never been *evaluated against the alternative*.
+`run_judge_eval.py` does that, as a **single-component swap**: policy, storage
+budget, retrieval and compression pinned at the §23 winner (P1-S select,
+context 2048, store 4096), and only the scorer varying. Anything that moves is
+the scorer.
+
+| Scorer | Evidence | Answer | Δ vs P1 | 95% CI (clustered) |
+|---|---|---|---|---|
+| P0 recency (no content judgement) | 12.6% | 25.6% | −11.19 | [−17.24, −6.19] |
+| **P1 heuristic** (regex + shallow NER) | 19.8% | **36.8%** | — | — |
+| P2 LLM judge (Qwen2.5-0.5B) | 14.0% | 30.9% | **−5.87** | [−10.77, −1.76] |
+| P3 learned (LOCO, bound) | 33.4% | 48.3% | +11.47 | [+4.90, +17.86] |
+
+**The LLM judge loses to the regex by 5.87 answer points, and the interval
+excludes zero.** A real negative, not a wash — for ~15 minutes of GPU per corpus
+against microseconds. Three things follow, and all three survive clustering:
+
+1. **Scoring at all is load-bearing**: +11.19 over unscored recency. Without
+   this row the rest of the table would not be worth reading — it establishes
+   that the decision point is where the value is.
+2. **P2 fails at it anyway.** The diagnosis is what the judge is *shown*: it
+   rates each turn **in isolation**, and salience is not a property of a turn on
+   its own. A phone number matters because something later asks for it.
+3. **The headroom is real** (+11.47 to the learned bound), so P2 was not
+   defeated by a missing ceiling. P3 sees the same isolated text and does
+   better because it was fitted to which turns *turned out* to be cited —
+   corpus-level base rates the judge has no way to see.
+
+The CIs were added to `run_judge_eval.py` before any of this was quoted, per
+§24.4: aggregates cannot support a paired comparison, and 1527 questions from
+10 conversations are not 1527 independent trials.
+
+### 28.1 Two numbers that look inconsistent and are not
+
+`train_scorer.py` reports P3 at **31.5%** answer recall; the table above says
+**48.3%**. Different storage budgets — train_scorer defaults to S=2048, the
+judge eval runs at S=4096 — and P1 moves with it identically (26.3% → 36.8%).
+The headroom over P1 grows with the budget: **+5.2 at S=2048, +11.5 at S=4096**.
+Nothing is wrong; the pair must simply always be quoted with its S.
+
+### 28.2 A stalled download turned a 90-second test suite into a 14-minute hang
+
+`test_memgate.py` was left running and sat for 14 minutes at 0% CPU against an
+ESTABLISHED socket to huggingface.co. Every model this project uses is a
+verified local copy, but the loaders are Hub-aware even when handed a local
+path, so they reach out anyway.
+
+The hang is the symptom. The problem is that **a run which can silently fetch a
+model is a run whose inputs are not pinned** — §16.3 already lost a results
+table to a half-downloaded MiniLM. Importing `memgate` now sets
+`HF_HUB_OFFLINE=1` when `models/` exists, with `MEMGATE_ALLOW_HUB=1` as the
+deliberate escape hatch for adding a model.
+
+Two tests pin it (**61 passed**, up from 59). The second matters more than the
+first: if offline mode had made MiniLM unloadable, `_get_model()` would have
+fallen back to hashing bag-of-words and quietly relabelled every subsequent
+result — the exact failure §16.3 describes, re-armed by the fix for it.

@@ -22,14 +22,14 @@ def main():
     texts = sorted({f"[{t.speaker}] {t.text}"
                     for _s, turns, _q in data for t in turns})
     print(f"  {len(texts)} distinct turns")
-    j = LocalLLMJudge()
+    j = LocalLLMJudge(batch_size=64, dtype='bfloat16')
     have = j.load_cache()
     print(f"  cache: {have} already scored")
     todo = len(texts) - sum(1 for t in texts
                             if __import__("memgate.judge", fromlist=["_key"])._key(t) in j.cache)
     print(f"  to score: {todo}\n")
     t0 = time.time()
-    scores = j.score_many(texts, verbose=True)
+    scores = j.score_many(texts, verbose=True, save_every=640)
     j.save_cache()
     el = time.time() - t0
     print(f"\n  scored in {el/60:.1f} min ({len(texts)/max(el,1e-9):.1f} turns/s)")
