@@ -4,8 +4,11 @@ memgate/models/
 # locomo10.json, 2.7 MB, from snap-research/locomo
 memgate/data/locomo/
 
-# Generated results, rewritten on every run.
-memgate/results/
+# Results are committed: a reviewer should see fig1-fig5 and every number
+# REPORT.md cites without a 9-minute LoCoMo run. The judge/reader CACHES are
+# not — they are a local generation cache keyed by (model, prompt) hash,
+# rebuildable and worth ~320 KB of churn per run.
+memgate/results/*cache*.json
 
 __pycache__/
 *.py[cod]

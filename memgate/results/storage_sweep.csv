@@ -1,0 +1,36 @@
+policy,store_budget,context_budget,strict_recall,soft_recall,answer_recall,stored_tokens,max_stored,avg_context_tokens,strict_per_kstored,n_questions,embedder,tokenizer
+P0 sliding-window,512,2048,0.0157,0.0182,0.0490,496.6,509,495.7,3.16,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+RAG store-all,512,2048,0.0157,0.0182,0.0490,496.6,509,495.7,3.16,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+P1 MemGate,512,2048,0.0255,0.0307,0.0587,421.7,479,415.3,6.06,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+P1-A MemGate adaptive,512,2048,0.0439,0.0496,0.0545,490.9,504,486.3,8.94,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+P1-S MemGate select,512,2048,0.0177,0.0257,0.0741,484.6,508,473.1,3.65,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+P0 sliding-window,1024,2048,0.0432,0.0489,0.0909,1005.2,1024,1004.9,4.30,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+RAG store-all,1024,2048,0.0432,0.0489,0.0909,1005.2,1024,986.8,4.30,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+P1 MemGate,1024,2048,0.0609,0.0754,0.1147,905.9,986,885.6,6.72,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+P1-A MemGate adaptive,1024,2048,0.0910,0.1087,0.1091,1001.5,1024,984.0,9.09,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+P1-S MemGate select,1024,2048,0.0557,0.0721,0.1566,1005.9,1022,963.3,5.53,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+P0 sliding-window,2048,2048,0.1009,0.1137,0.1832,2030.6,2045,2030.6,4.97,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+RAG store-all,2048,2048,0.1009,0.1137,0.1832,2030.6,2045,1982.9,4.97,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+P1 MemGate,2048,2048,0.1231,0.1467,0.1804,1483.3,2042,1401.2,8.30,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+P1-A MemGate adaptive,2048,2048,0.1958,0.2299,0.2336,2022.0,2047,1758.1,9.68,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+P1-S MemGate select,2048,2048,0.1087,0.1374,0.2629,2025.0,2047,1932.5,5.37,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+P0 sliding-window,4096,2048,0.1009,0.1137,0.1832,4068.5,4092,2045.1,2.48,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+RAG store-all,4096,2048,0.1781,0.2053,0.2811,4068.5,4092,2018.5,4.38,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+P1 MemGate,4096,2048,0.1408,0.1699,0.2028,2059.0,3928,1424.4,6.84,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+P1-A MemGate adaptive,4096,2048,0.3052,0.3595,0.3007,4041.6,4093,1469.7,7.55,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+P1-S MemGate select,4096,2048,0.1978,0.2437,0.3678,4077.3,4089,2005.7,4.85,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+P0 sliding-window,8192,2048,0.1009,0.1137,0.1832,8172.1,8191,2045.8,1.23,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+RAG store-all,8192,2048,0.3065,0.3487,0.4434,8172.1,8191,1986.6,3.75,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+P1 MemGate,8192,2048,0.1441,0.1732,0.2056,2150.5,4843,1424.8,6.70,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+P1-A MemGate adaptive,8192,2048,0.4355,0.5064,0.3748,8159.8,8191,1170.3,5.34,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+P1-S MemGate select,8192,2048,0.3137,0.3720,0.4825,8170.7,8192,1772.5,3.84,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+P0 sliding-window,16384,2048,0.1009,0.1137,0.1832,15666.3,16383,2046.8,0.64,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+RAG store-all,16384,2048,0.5331,0.6001,0.6643,15666.3,16383,1965.1,3.40,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+P1 MemGate,16384,2048,0.1441,0.1732,0.2056,2150.5,4843,1424.8,6.70,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+P1-A MemGate adaptive,16384,2048,0.5835,0.6586,0.6643,15623.3,16380,1406.3,3.73,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+P1-S MemGate select,16384,2048,0.5874,0.6591,0.7231,15626.4,16384,1777.2,3.76,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+P0 sliding-window,0,2048,0.1009,0.1137,0.1832,18586.8,22033,2046.8,0.54,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+RAG store-all,0,2048,0.6182,0.6897,0.7483,18586.8,22033,1956.9,3.33,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+P1 MemGate,0,2048,0.1441,0.1732,0.2056,2148.0,4843,1423.2,6.71,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+P1-A MemGate adaptive,0,2048,0.6228,0.6935,0.7524,18445.4,21654,1752.6,3.38,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+P1-S MemGate select,0,2048,0.6228,0.6935,0.7524,18445.4,21654,1752.6,3.38,1527,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base

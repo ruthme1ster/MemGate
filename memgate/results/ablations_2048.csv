@@ -1,0 +1,24 @@
+family,configuration,strict_recall,delta_pts,soft_recall,answer_recall,avg_tokens,budget,embedder,tokenizer
+architecture,full system,0.3052,+0.00,0.3595,0.3007,1469.7,2048,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+architecture,- consolidation merge,0.2796,-2.55,0.3252,0.2503,915.8,2048,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+architecture,- informative compressor,0.2672,-3.80,0.3186,0.2783,1691.7,2048,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+architecture,- density packing,0.3052,+0.00,0.3595,0.3007,1469.7,2048,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+architecture,- retrieval (tier 3),0.0020,-30.32,0.0025,0.0238,168.0,2048,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+architecture,- working memory (tier 2),0.3052,+0.00,0.3595,0.3007,1469.7,2048,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+architecture,- supersession,0.3032,-0.20,0.3593,0.2993,1459.8,2048,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+architecture,- scored eviction (FIFO),0.2554,-4.98,0.3000,0.2336,1313.3,2048,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+architecture,- demotion on pressure,0.1978,-10.74,0.2437,0.3678,2005.7,2048,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+scoring,- filler,0.3045,-0.07,0.3588,0.3007,1469.9,2048,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+scoring,- durable,0.2881,-1.70,0.3419,0.2573,1301.1,2048,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+scoring,- numeric,0.3039,-0.13,0.3553,0.2839,1398.9,2048,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+scoring,- temporal,0.3091,+0.39,0.3648,0.3021,1458.2,2048,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+scoring,- proper,0.3098,+0.46,0.3638,0.3007,1472.4,2048,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+scoring,- question,0.3065,+0.13,0.3582,0.2965,1430.1,2048,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+scoring,- speaker,0.3052,+0.00,0.3595,0.3007,1469.7,2048,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+scoring,- update,0.3006,-0.46,0.3579,0.2993,1461.8,2048,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+parameter,buffer N=2,0.3071,+0.20,0.3614,0.2979,1295.0,2048,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+parameter,buffer N=12,0.3117,+0.65,0.3668,0.3021,1632.6,2048,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+parameter,tau_fact=0.30,0.3052,+0.00,0.3595,0.3007,1469.7,2048,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+parameter,tau_fact=0.60,0.3052,+0.00,0.3595,0.3007,1469.7,2048,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+parameter,chunk_tokens=32,0.3052,+0.00,0.3595,0.3007,1469.7,2048,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base
+parameter,chunk_tokens=128,0.3052,+0.00,0.3595,0.3007,1469.7,2048,all-MiniLM-L6-v2/384d,tiktoken/cl100k_base

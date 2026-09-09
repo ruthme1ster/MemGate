@@ -1,0 +1,1445 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MemGate Results Register</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<style>
+:root{
+  color-scheme: light;
+  --paper:#f5f5f6; --surface:#fdfdfd; --surface-2:#ebebee; --inset:#f0f0f2;
+  --ink:#16161a; --ink-2:#4e4e57; --ink-3:#7d7d87;
+  --rule:#dcdce0; --rule-2:#c4c4ca;
+  --accent:#a3191f; --accent-ink:#a3191f; --accent-wash:#f6e9e9;
+  --s0:#83828c; --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a;
+  --grid:#e4e4e8;
+  --shadow:0 1px 2px rgba(16,16,22,.06);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --paper:#131316; --surface:#1b1b1f; --surface-2:#25252a; --inset:#202024;
+    --ink:#f1f0ee; --ink-2:#b3b2ba; --ink-3:#8a8992;
+    --rule:#313137; --rule-2:#43434a;
+    --accent:#e8767a; --accent-ink:#e8767a; --accent-wash:#2b1d1e;
+    --s0:#8f8e98; --s1:#3987e5; --s2:#d95926; --s3:#199e70;
+    --grid:#2b2b31;
+    --shadow:0 1px 2px rgba(0,0,0,.4);
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --paper:#131316; --surface:#1b1b1f; --surface-2:#25252a; --inset:#202024;
+  --ink:#f1f0ee; --ink-2:#b3b2ba; --ink-3:#8a8992;
+  --rule:#313137; --rule-2:#43434a;
+  --accent:#e8767a; --accent-ink:#e8767a; --accent-wash:#2b1d1e;
+  --s0:#8f8e98; --s1:#3987e5; --s2:#d95926; --s3:#199e70;
+  --grid:#2b2b31;
+  --shadow:0 1px 2px rgba(0,0,0,.4);
+}
+*,*::before,*::after{box-sizing:border-box;}
+html{-webkit-text-size-adjust:100%;}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:"Source Serif 4",Georgia,"Times New Roman",serif;
+  font-size:16px; line-height:1.6;
+}
+img{max-width:100%;}
+[hidden]{display:none !important;}
+.mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;}
+.sans{font-family:"IBM Plex Sans Condensed","IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}
+h1,h2,h3,h4{font-family:"IBM Plex Sans Condensed","IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  margin:0; text-wrap:balance; letter-spacing:-.005em;}
+a{color:var(--accent-ink);}
+a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+
+/* ---------- shell ---------- */
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px;}
+.topbar{
+  position:sticky;top:0;z-index:40;background:var(--paper);
+  border-bottom:1px solid var(--rule);
+}
+.topbar-in{display:flex;align-items:center;gap:16px;height:52px;}
+.brand{font-family:"IBM Plex Sans Condensed",sans-serif;font-weight:700;font-size:17px;letter-spacing:.01em;}
+.brand em{font-style:normal;color:var(--accent-ink);}
+.topbar .spacer{flex:1;}
+.seg{display:inline-flex;border:1px solid var(--rule-2);background:var(--surface);}
+.seg button{
+  font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+  padding:6px 11px;border:0;background:transparent;color:var(--ink-2);cursor:pointer;
+}
+.seg button+button{border-left:1px solid var(--rule);}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--paper);}
+.topbar-note{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--ink-3);}
+
+/* ---------- masthead ---------- */
+.mast{padding:52px 0 34px;border-bottom:2px solid var(--ink);}
+.eyebrow{font-family:"IBM Plex Mono",monospace;font-size:11.5px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--ink-3);}
+.mast h1{font-size:clamp(38px,7vw,72px);line-height:.98;font-weight:700;margin:14px 0 0;}
+.mast .sub{font-size:clamp(18px,2.4vw,25px);color:var(--ink-2);margin-top:10px;max-width:34ch;}
+.mast-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:40px;align-items:end;}
+.authors{font-family:"IBM Plex Mono",monospace;font-size:12.5px;line-height:2;color:var(--ink-2);}
+.authors b{color:var(--ink);font-weight:500;}
+.stamp{border-top:1px solid var(--rule);padding-top:10px;margin-top:16px;
+  font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--ink-3);}
+
+/* ---------- layout ---------- */
+.cols{display:grid;grid-template-columns:174px minmax(0,1fr);gap:44px;padding:34px 0 80px;}
+nav.rail{position:sticky;top:76px;align-self:start;font-family:"IBM Plex Mono",monospace;font-size:11.5px;}
+nav.rail ol{list-style:none;margin:0;padding:0;}
+nav.rail li{margin:0 0 2px;}
+nav.rail a{display:flex;gap:8px;padding:3px 0;color:var(--ink-3);text-decoration:none;border-left:2px solid transparent;padding-left:9px;}
+nav.rail a:hover{color:var(--ink);}
+nav.rail a.on{color:var(--ink);border-left-color:var(--accent);}
+nav.rail .n{color:var(--ink-3);min-width:26px;}
+nav.rail .rail-h{letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);
+  padding-left:11px;margin:0 0 8px;}
+
+main{min-width:0;}
+section{padding:0 0 54px;scroll-margin-top:74px;}
+.sec-head{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--rule);
+  padding-bottom:8px;margin-bottom:20px;}
+.sec-head .ref{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--accent-ink);
+  letter-spacing:.06em;white-space:nowrap;}
+.sec-head h2{font-size:26px;font-weight:600;}
+.sec-head .meta{margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:11px;
+  color:var(--ink-3);text-align:right;white-space:nowrap;}
+.claim{font-size:19px;line-height:1.55;max-width:62ch;margin:0 0 20px;}
+.claim b{font-weight:600;}
+p{max-width:66ch;}
+.note{font-size:14.5px;color:var(--ink-2);max-width:64ch;}
+.note.tight{margin:12px 0 0;}
+
+/* ---------- panels & tiles ---------- */
+.panel{background:var(--surface);border:1px solid var(--rule);padding:18px 20px 14px;}
+.panel + .panel{margin-top:16px;}
+.panel-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:6px;}
+.panel-head h3{font-size:15px;font-weight:600;}
+.panel-head .unit{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--ink-3);
+  letter-spacing:.05em;text-transform:uppercase;}
+.panel-head .ctl{margin-left:auto;}
+
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:1px;
+  background:var(--rule);border:1px solid var(--rule);}
+.tile{background:var(--surface);padding:14px 16px;}
+.tile .k{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-3);}
+.tile .v{font-family:"IBM Plex Sans Condensed",sans-serif;font-weight:700;font-size:29px;
+  line-height:1.15;margin-top:4px;font-variant-numeric:tabular-nums;}
+.tile .v small{font-size:15px;font-weight:600;color:var(--ink-2);}
+.tile .c{font-size:13px;color:var(--ink-2);line-height:1.4;margin-top:2px;}
+
+/* ---------- chips ---------- */
+.chip{display:inline-flex;align-items:center;gap:6px;font-family:"IBM Plex Mono",monospace;
+  font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;padding:2px 8px;
+  border:1px solid var(--rule-2);color:var(--ink-2);white-space:nowrap;}
+.chip.done{background:var(--ink);color:var(--paper);border-color:var(--ink);}
+.chip.part{border-color:var(--accent);color:var(--accent-ink);}
+.chip.open{border-style:dashed;color:var(--ink-3);}
+.chip .dot{width:6px;height:6px;border-radius:50%;background:currentColor;}
+
+/* ---------- workstream list ---------- */
+.work{border:1px solid var(--rule);background:var(--surface);}
+.work-row{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:14px;align-items:baseline;
+  padding:11px 16px;border-top:1px solid var(--rule);}
+.work-row:first-child{border-top:0;}
+.work-row .i{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--ink-3);}
+.work-row .t{font-size:15px;}
+.work-row .t span{display:block;font-size:13.5px;color:var(--ink-2);line-height:1.45;}
+
+/* ---------- tables ---------- */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--rule);background:var(--surface);}
+table{border-collapse:collapse;width:100%;font-size:14px;}
+caption{text-align:left;font-family:"IBM Plex Mono",monospace;font-size:11px;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);padding:10px 14px 0;}
+th,td{padding:8px 14px;text-align:left;border-top:1px solid var(--rule);white-space:nowrap;}
+thead th{border-top:0;border-bottom:1px solid var(--rule-2);font-family:"IBM Plex Sans Condensed",sans-serif;
+  font-size:12px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-2);}
+td.num,th.num{text-align:right;font-family:"IBM Plex Mono",monospace;
+  font-variant-numeric:tabular-nums;}
+tr.hi td{background:var(--inset);}
+td b{font-weight:600;}
+.swatch{display:inline-block;width:9px;height:9px;margin-right:7px;vertical-align:baseline;}
+
+/* ---------- charts ---------- */
+.chart{position:relative;}
+.chart svg{display:block;width:100%;height:auto;overflow:visible;}
+.tip{position:absolute;pointer-events:none;opacity:0;transition:opacity .09s;z-index:5;
+  background:var(--ink);color:var(--paper);padding:7px 9px;font-family:"IBM Plex Mono",monospace;
+  font-size:11.5px;line-height:1.5;white-space:nowrap;box-shadow:var(--shadow);}
+.tip b{font-weight:600;}
+.tip .r{display:flex;gap:8px;justify-content:space-between;}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-family:"IBM Plex Mono",monospace;
+  font-size:11.5px;color:var(--ink-2);margin-top:10px;}
+.legend .it{display:inline-flex;align-items:center;gap:6px;}
+.legend .ln{width:16px;height:0;border-top-width:2.5px;border-top-style:solid;}
+
+/* ---------- readout ---------- */
+.readout{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:1px;
+  background:var(--rule);border:1px solid var(--rule);margin-top:14px;}
+.readout .cell{background:var(--surface);padding:10px 13px;}
+.readout .cell .k{font-family:"IBM Plex Mono",monospace;font-size:10.5px;color:var(--ink-3);
+  letter-spacing:.06em;text-transform:uppercase;display:flex;align-items:center;gap:6px;}
+.readout .cell .v{font-family:"IBM Plex Mono",monospace;font-size:21px;font-weight:500;
+  font-variant-numeric:tabular-nums;margin-top:3px;}
+.readout .cell .d{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--ink-2);}
+
+/* ---------- slider ---------- */
+.slider-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:4px;}
+.slider-row label{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.07em;
+  text-transform:uppercase;color:var(--ink-3);}
+input[type=range]{-webkit-appearance:none;appearance:none;flex:1;min-width:180px;height:22px;
+  background:transparent;cursor:pointer;}
+input[type=range]::-webkit-slider-runnable-track{height:2px;background:var(--rule-2);}
+input[type=range]::-moz-range-track{height:2px;background:var(--rule-2);}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;
+  background:var(--accent);margin-top:-6px;border:0;}
+input[type=range]::-moz-range-thumb{width:14px;height:14px;background:var(--accent);border:0;border-radius:0;}
+.sv{font-family:"IBM Plex Mono",monospace;font-size:13px;color:var(--ink);
+  font-variant-numeric:tabular-nums;min-width:96px;}
+
+/* ---------- callouts ---------- */
+.callout{border-left:3px solid var(--accent);background:var(--accent-wash);padding:13px 16px;
+  font-size:15px;line-height:1.55;margin:16px 0 0;max-width:70ch;}
+.callout .lbl{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--accent-ink);display:block;margin-bottom:3px;}
+.flag{border:1px dashed var(--rule-2);background:var(--inset);padding:12px 15px;font-size:14.5px;
+  line-height:1.5;margin:14px 0 0;max-width:70ch;}
+.flag .lbl{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-3);display:block;margin-bottom:3px;}
+
+/* ---------- findings ---------- */
+.finds{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:1px;
+  background:var(--rule);border:1px solid var(--rule);}
+.find{background:var(--surface);padding:16px 18px;}
+.find .n{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--accent-ink);
+  letter-spacing:.06em;}
+.find h4{font-size:15.5px;font-weight:600;margin:6px 0 6px;}
+.find p{font-size:14px;color:var(--ink-2);line-height:1.5;margin:0;max-width:none;}
+.find .cost{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--ink);
+  margin-top:9px;padding-top:8px;border-top:1px solid var(--rule);}
+
+/* ---------- stack ---------- */
+.stack-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1px;
+  background:var(--rule);border:1px solid var(--rule);}
+.stk{background:var(--surface);padding:15px 17px;}
+.stk h4{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-3);font-weight:400;margin-bottom:9px;}
+.stk ul{margin:0;padding:0;list-style:none;font-size:14px;line-height:1.75;}
+.stk li{display:flex;gap:9px;}
+.stk li b{font-weight:600;font-family:"IBM Plex Mono",monospace;font-size:12.5px;
+  color:var(--ink);white-space:nowrap;}
+.stk li span{color:var(--ink-2);font-size:13.5px;}
+
+footer{border-top:2px solid var(--ink);padding:22px 0 60px;font-family:"IBM Plex Mono",monospace;
+  font-size:11.5px;color:var(--ink-3);line-height:1.9;}
+
+@media (max-width:900px){
+  .cols{grid-template-columns:minmax(0,1fr);gap:0;}
+  nav.rail{display:none;}
+  .mast-grid{grid-template-columns:minmax(0,1fr);gap:24px;}
+  .topbar-note{display:none;}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none !important;animation:none !important;}}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="wrap topbar-in">
+    <div class="brand">Mem<em>Gate</em></div>
+    <div class="topbar-note">Capstone&nbsp;·&nbsp;Review&nbsp;2 preparation</div>
+    <div class="spacer"></div>
+    <span class="topbar-note">Metric</span>
+    <div class="seg" id="metricSeg" role="group" aria-label="Recall metric">
+      <button type="button" data-metric="answer" aria-pressed="true">Answer recall</button>
+      <button type="button" data-metric="strict" aria-pressed="false">Evidence recall</button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <header class="mast">
+    <div class="mast-grid">
+      <div>
+        <div class="eyebrow">SVKM&rsquo;s NMIMS, Indore Campus &nbsp;·&nbsp; Capstone Project</div>
+        <h1>What to keep,<br>what to forget</h1>
+        <div class="sub">A measured study of the memory decision policy for long-running LLM agents, under a bounded store.</div>
+      </div>
+      <div>
+        <div class="authors">
+          <b>Simar Singh Khanuja</b> &nbsp;70562200088<br>
+          <b>Yash Ramchandani</b> &nbsp;70562300097<br>
+          Guide review &mdash; progress to date
+        </div>
+        <div class="stamp" id="stamp">&nbsp;</div>
+      </div>
+    </div>
+  </header>
+
+  <div class="cols">
+    <nav class="rail" aria-label="Sections">
+      <div class="rail-h">Register</div>
+      <ol id="railList"></ol>
+    </nav>
+
+    <main>
+
+    <!-- ===================== STATUS ===================== -->
+    <section id="status">
+      <div class="sec-head">
+        <span class="ref">§0</span>
+        <h2>Where the project stands</h2>
+        <span class="meta" id="statusMeta"></span>
+      </div>
+      <p class="claim">The measurement track is <b>complete</b>: every claim in the report is
+      produced by a script in this repository, carries a confidence interval clustered by
+      conversation, and is pinned by a regression test. What remains is the generative
+      end&#8209;task run and two extensions.</p>
+
+      <div class="tiles" id="tiles"></div>
+
+      <div class="work" id="work" style="margin-top:16px"></div>
+    </section>
+
+    <!-- ===================== QUESTION ===================== -->
+    <section id="question">
+      <div class="sec-head">
+        <span class="ref">§1</span>
+        <h2>The question</h2>
+        <span class="meta">Problem &amp; framing</span>
+      </div>
+      <p class="claim">A 200K-token context window did not solve agent memory; it relocated the
+      problem. Accuracy degrades 30&ndash;50% well before the documented limit, so the binding
+      constraint is <b>curation, not capacity</b>. On LongMemEval, oracle retrieval scores ~92%
+      where the same model interactively scores ~58% &mdash; a 34-point gap that is memory
+      <em>selection</em> failure, not reasoning failure.</p>
+      <div class="callout">
+        <span class="lbl">Research question</span>
+        How much of the memory-selection gap can a better decision policy recover, and under
+        what budget does compression pay for itself?
+      </div>
+      <div class="flag">
+        <span class="lbl">What is new here</span>
+        Tiered memory with forgetting is already shipped (Letta/MemGPT, Mem0, Zep). The open
+        problem, named in a 2026 review, is that those systems <em>&ldquo;do not solve the
+        fundamental challenge: deciding what to remember and what to forget.&rdquo;</em> MemGate is
+        a policy-agnostic harness that puts competing decision policies on one
+        accuracy-per-token frontier so the decision itself can be measured.
+      </div>
+    </section>
+
+    <!-- ===================== ARCHITECTURE ===================== -->
+    <section id="architecture">
+      <div class="sec-head">
+        <span class="ref">§2</span>
+        <h2>How it works</h2>
+        <span class="meta">Write path &middot; read path</span>
+      </div>
+      <p class="claim">MemGate wraps a <b>frozen</b> LLM and controls what enters the prompt.
+      Nothing is trained; the base model is a black box. The three tiers are a
+      <b>lifecycle, not a partition</b> &mdash; everything enters Tier&nbsp;1, and the routing
+      decision happens once, on eviction.</p>
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Architecture</h3>
+          <span class="unit">each item scored exactly once, at eviction</span>
+        </div>
+        <div class="chart" id="archDiagram"></div>
+      </div>
+      <div class="tbl-wrap" style="margin-top:16px">
+        <table>
+          <caption>The three tiers and their criteria</caption>
+          <thead><tr><th>Tier</th><th>Holds</th><th>Criterion</th><th>In context?</th></tr></thead>
+          <tbody>
+            <tr><td>1 &mdash; short-term</td><td>raw verbatim turns</td><td><b>when</b> &mdash; recent?</td><td>always</td></tr>
+            <tr><td>2 &mdash; working</td><td>compressed gists</td><td><b>gist</b> &mdash; continuity?</td><td>always (small)</td></tr>
+            <tr><td>3 &mdash; long-term</td><td>atomic facts + vectors</td><td><b>what</b> &mdash; durable?</td><td>on retrieval match</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ===================== FRONTIER ===================== -->
+    <section id="frontier">
+      <div class="sec-head">
+        <span class="ref">§3.1&ndash;3.2</span>
+        <h2>Storage was never budgeted</h2>
+        <span class="meta" id="frontierMeta"></span>
+      </div>
+      <p class="claim">Every experiment in this literature caps the <b>context</b> per query and
+      leaves the <b>store</b> unbounded. Under that accounting, &ldquo;keep everything and retrieve
+      top-k&rdquo; is charged nothing for holding all 419 turns of a conversation, so forgetting can
+      only ever lose. Impose a storage budget <span class="mono">S</span> and the question changes
+      from <em>what fits in context?</em> to <em>what is worth keeping at all?</em></p>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Accuracy against the storage budget</h3>
+          <span class="unit" id="frontierUnit"></span>
+        </div>
+        <div class="chart" id="frontierChart"></div>
+        <div class="legend" id="frontierLegend"></div>
+        <div class="slider-row">
+          <label for="sSlider">Storage budget S</label>
+          <input type="range" id="sSlider" min="0" max="5" step="1" value="3" aria-label="Storage budget in tokens">
+          <span class="sv" id="sValue"></span>
+        </div>
+        <div class="readout" id="frontierReadout"></div>
+      </div>
+
+      <div class="callout" id="metricCallout"></div>
+
+      <div class="callout" style="border-left-color:var(--ink);background:var(--inset)">
+        <span class="lbl" style="color:var(--ink-2)">The cleanest comparison in the project</span>
+        <b>RAG and P1-S hold the same verbatim turns, in the same space, retrieved the same way</b>,
+        and differ in one respect only: which turns they forget when the cap binds. RAG forgets
+        oldest-first; P1-S forgets lowest-utility-first. That gap is the decision policy and
+        nothing else.
+      </div>
+    </section>
+
+    <!-- ===================== SIGNIFICANCE ===================== -->
+    <section id="significance">
+      <div class="sec-head">
+        <span class="ref">§3.3</span>
+        <h2>What survives clustering</h2>
+        <span class="meta">B = 10,000 &middot; clustered by conversation</span>
+      </div>
+      <p class="claim">1,527 questions drawn from 10 conversations are not 1,527 independent
+      trials. Every interval below is a paired bootstrap resampled at the <b>conversation</b>
+      level, with an exact McNemar test alongside. One earlier claim does not survive it, and is
+      reported as not significant rather than quietly dropped.</p>
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Effect size, 95% confidence interval</h3>
+          <span class="unit">points of recall &middot; S = 4096</span>
+        </div>
+        <div class="chart" id="forestChart"></div>
+      </div>
+      <div class="tbl-wrap" style="margin-top:16px"><table id="sigTable"></table></div>
+    </section>
+
+    <!-- ===================== SCALING ===================== -->
+    <section id="scaling">
+      <div class="sec-head">
+        <span class="ref">§3.4</span>
+        <h2>The rate&ndash;distortion prediction fails</h2>
+        <span class="meta">to 182&times; compression</span>
+      </div>
+      <p class="claim">Theory predicts compression must eventually beat selection: squeeze the
+      store hard enough and a lossy record must beat no record. Sweeping <span class="mono">S</span>
+      downward cannot test this &mdash; everything hits the floor first &mdash; so the missing axis
+      is conversation <b>length</b>. We concatenate up to 10 LoCoMo conversations (186K tokens) and
+      hold <span class="mono">S</span> fixed.</p>
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Accuracy against compression ratio</h3>
+          <span class="unit" id="scalingUnit"></span>
+          <span class="ctl seg" id="scalingSeg" role="group" aria-label="Storage budget"></span>
+        </div>
+        <div class="chart" id="scalingChart"></div>
+        <div class="legend" id="scalingLegend"></div>
+      </div>
+      <div class="callout">
+        <span class="lbl">Result</span>
+        <b>No crossover to 182&times;</b>, and the selection margin over RAG <em>widens</em> with
+        pressure. At LoCoMo scale the optimum sits at the vertex: a subset at full fidelity beats
+        everything at reduced fidelity.
+      </div>
+      <div class="flag">
+        <span class="lbl">Caveat, stated plainly</span>
+        A concatenated stream is not a natural long conversation. Each question concerns one
+        constituent conversation, so the others act as distractors. It is a stress test of
+        retention under pressure &mdash; the variable under study &mdash; not a long-dialogue
+        benchmark.
+      </div>
+    </section>
+
+    <!-- ===================== COST ===================== -->
+    <section id="cost">
+      <div class="sec-head">
+        <span class="ref">§3.5</span>
+        <h2>The index is not free</h2>
+        <span class="meta">bytes, not tokens</span>
+      </div>
+      <p class="claim">Storage is normally denominated in text tokens, which silently gives the
+      embedding index away. A 384-d float32 vector is 1,536&nbsp;B against a turn&rsquo;s ~130&nbsp;B
+      of text: <b>the index outweighs the content ~12&times;</b>, and the binding cost becomes the
+      <em>number</em> of items, not their length.</p>
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Accuracy against a byte budget</h3>
+          <span class="unit" id="costUnit"></span>
+        </div>
+        <div class="chart" id="costChart"></div>
+        <div class="legend" id="costLegend"></div>
+      </div>
+      <div class="callout">
+        <span class="lbl">Two results</span>
+        The selection finding is <b>unit-robust</b> &mdash; it holds when the budget is counted in
+        bytes. And <b>below ~40&nbsp;KiB an embedding index cannot earn its own storage</b>: plain
+        recency, which keeps no vectors at all, wins outright. That regime is invisible when the
+        budget counts text alone.
+      </div>
+    </section>
+
+    <!-- ===================== SCORER ===================== -->
+    <section id="scorer">
+      <div class="sec-head">
+        <span class="ref">§3.6&ndash;3.7</span>
+        <h2>The scorer is the bottleneck</h2>
+        <span class="meta">single-component swap &middot; S = 4096</span>
+      </div>
+      <p class="claim">Policy, storage budget, retrieval and compression are pinned at the §3.2
+      winner and <b>only the scorer varies</b>, so anything that moves is the scorer. Scoring at
+      all is worth +11.2 points over unscored recency &mdash; the decision point is load-bearing.
+      Then the interesting part: <b>an LLM judge loses to a regex.</b></p>
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Four scorers, everything else held fixed</h3>
+          <span class="unit" id="judgeUnit"></span>
+        </div>
+        <div class="chart" id="judgeChart"></div>
+      </div>
+      <div class="tbl-wrap" style="margin-top:16px"><table id="judgeTable"></table></div>
+      <div class="callout">
+        <span class="lbl">The diagnosis</span>
+        The judge rates each turn <b>in isolation</b>, and salience is not a property of a turn on
+        its own &mdash; a phone number matters because something later asks for it. The learned
+        scorer sees the same isolated text and does better only because it was fitted to which
+        turns <em>turned out</em> to be cited, absorbing corpus-level base rates the judge has no
+        way to see. P2 was not defeated by a missing ceiling: the headroom is +11.5 points and
+        real.
+      </div>
+      <div class="flag">
+        <span class="lbl">Not deployable</span>
+        P3-learned is a <b>headroom bound, not a component</b>. A live agent has no future
+        questions to learn from. It brackets what a learned decision policy could reach, with the
+        Oracle above it and the heuristic below.
+      </div>
+    </section>
+
+    <!-- ===================== ABLATION ===================== -->
+    <section id="ablation">
+      <div class="sec-head">
+        <span class="ref">§3.6</span>
+        <h2>What each component is worth</h2>
+        <span class="meta">remove one, re-run</span>
+      </div>
+      <p class="claim">Each row removes a single mechanism and re-runs the whole benchmark. Read
+      the two metrics together: <b>demotion on pressure</b> is the row where they disagree, and
+      that disagreement is the compression finding in miniature.</p>
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Change from the full system when one component is removed</h3>
+          <span class="unit" id="ablUnit"></span>
+        </div>
+        <div class="chart" id="ablChart"></div>
+      </div>
+    </section>
+
+    <!-- ===================== ENDTASK ===================== -->
+    <section id="endtask">
+      <div class="sec-head">
+        <span class="ref">§3.8</span>
+        <h2>End-task accuracy</h2>
+        <span class="meta" id="endtaskMeta"></span>
+      </div>
+      <p class="claim">Every number above is <b>context recall</b> &mdash; did the evidence reach
+      the prompt? That is the <em>ceiling</em> on accuracy, not accuracy. This arm sends the
+      assembled context through a real reader (Qwen2.5-1.5B-Instruct-4bit, greedy) and scores the
+      output with the same normaliser, so &ldquo;the answer reached the context&rdquo; and
+      &ldquo;the answer reached the output&rdquo; are one predicate applied at two points.</p>
+      <div class="flag" style="border-color:var(--accent);border-style:solid;margin:0 0 16px">
+        <span class="lbl" style="color:var(--accent-ink)">Pilot, not a result</span>
+        The table below is a <b>12-question smoke run</b>. It demonstrates that the pipeline,
+        the two controls and the generation cache work end to end. <b>It is far too small to
+        support any claim</b>, and is shown here only as evidence that the remaining experiment is
+        wired and ready. The full 715-question run is hours of local generation and has not been
+        made.
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Reader accuracy by memory policy</h3>
+          <span class="unit">n = 12 &middot; smoke run</span>
+        </div>
+        <div class="chart" id="endtaskChart"></div>
+      </div>
+      <p class="note tight">Two controls the comparison cannot be read without.
+      <b>Closed-book</b> is the floor &mdash; a model answering from parametric knowledge would
+      make every policy look good, and without this row we could not tell. <b>Oracle</b> is the
+      ceiling: exactly the cited evidence, perfectly selected.</p>
+    </section>
+
+    <!-- ===================== METHOD FINDINGS ===================== -->
+    <section id="method">
+      <div class="sec-head">
+        <span class="ref">§4</span>
+        <h2>Three findings about measurement</h2>
+        <span class="meta">each caught by a guard, not by inspection</span>
+      </div>
+      <p class="claim">The most useful results this project produced are about <b>how the
+      measurement goes wrong</b>. None was found by reading the code; each was found because a
+      guard fired.</p>
+      <div class="finds">
+        <div class="find">
+          <div class="n">4.1</div>
+          <h4>A policy that read its own answer key</h4>
+          <p><span class="mono">fact_id</span> is an evaluation label. An early consolidation rule
+          promoted items on it &mdash; the policy consulted the answer key when deciding what to
+          keep. The fix is a test, not a comment: strip every label from the input and the store
+          must come out bit-identical.</p>
+          <div class="cost">Cost: +45&ndash;47 recall points. Invalidated the Review&nbsp;1
+          headline (95% &rarr; 50%).</div>
+        </div>
+        <div class="find">
+          <div class="n">4.2</div>
+          <h4>A component&rsquo;s value is conditional on the bottleneck</h4>
+          <p>We measured the MiniLM embedder as worth +0.2 points and concluded it barely
+          mattered. True <em>in the regime measured</em>: retrieval was saturated against a write
+          path discarding 93% of the conversation. Once that ceiling lifted, the same swap was
+          worth +19.7.</p>
+          <div class="cost">Ablations run against a broken pipeline undervalue exactly the
+          components that would matter once it is fixed.</div>
+        </div>
+        <div class="find">
+          <div class="n">4.3</div>
+          <h4>A metric that credits pointers</h4>
+          <p>Evidence recall counts a turn as retrieved if its <em>id</em> reaches the context. A
+          compressed gist keeps the id and discards the text, so it scores a hit with none of the
+          answer behind it. Evidence recall once rose 8.1% &rarr; 14.8% while answer recall stayed
+          pinned at 12.8%.</p>
+          <div class="cost">The entire gain was bookkeeping. Answer-presence scoring is what
+          separated selection from compression.</div>
+        </div>
+      </div>
+      <div class="flag">
+        <span class="lbl">A fourth, smaller instance</span>
+        Batched judge scoring returned <span class="mono">NaN</span> for exactly the short turns.
+        The instinct was precision, and float32 did not fix it; the cause was left-padding creating
+        fully-masked attention rows. Without the NaN guard, every filler turn would have scored
+        NaN and quietly inverted the eviction order.
+      </div>
+    </section>
+
+    <!-- ===================== STACK ===================== -->
+    <section id="stack">
+      <div class="sec-head">
+        <span class="ref">§5</span>
+        <h2>What was actually used</h2>
+        <span class="meta">proposed at Review 1 &rarr; used</span>
+      </div>
+      <p class="claim">The Review&nbsp;1 deck proposed a hosted-API stack with an agent framework.
+      The project ran on <b>none of it</b>. Everything below is local, offline-pinned and free,
+      which is what made 35 storage-budget configurations and a 10,000-sample bootstrap affordable
+      to re-run on every change.</p>
+      <div class="stack-grid" id="stackGrid"></div>
+      <div class="tbl-wrap" style="margin-top:16px">
+        <table>
+          <caption>Proposed at Review 1 versus what the results were produced with</caption>
+          <thead><tr><th>Area</th><th>Proposed (Review 1)</th><th>Used</th><th>Why it changed</th></tr></thead>
+          <tbody>
+            <tr><td>Base model</td><td>Llama&nbsp;3 / Mistral via API</td><td>Qwen2.5-0.5B &amp; 1.5B-4bit, local</td><td>No key, no rate limit, fully reproducible offline</td></tr>
+            <tr><td>Agent framework</td><td>LangChain / LlamaIndex</td><td>None &mdash; direct harness</td><td>A framework would confound the variable under study</td></tr>
+            <tr><td>Vector store</td><td>FAISS / Chroma</td><td>NumPy cosine over an in-process store</td><td>10 conversations; an ANN index adds error, not speed</td></tr>
+            <tr><td>Evaluation</td><td>End-task F1 on a long-conversation benchmark</td><td>Context recall + answer presence, then end-task</td><td>Recall isolates the policy from the reader&rsquo;s reasoning</td></tr>
+            <tr><td>Hosted API</td><td>OpenAI / Anthropic for comparison</td><td>Not used</td><td>Cost, and non-determinism across a 35-config sweep</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ===================== NEXT ===================== -->
+    <section id="next">
+      <div class="sec-head">
+        <span class="ref">§6</span>
+        <h2>Limitations and what remains</h2>
+        <span class="meta">before the final review</span>
+      </div>
+      <div class="stack-grid">
+        <div class="stk">
+          <h4>Stated limitations</h4>
+          <ul>
+            <li><span>Ten conversations. Clustered intervals are wide because the cluster count is small &mdash; and the one effect that does not survive clustering is reported as not significant.</span></li>
+            <li><span>Context recall is the ceiling on end-task accuracy, not accuracy itself.</span></li>
+            <li><span>Compression tested is <b>extractive</b>. The negative result is stated for that case only.</span></li>
+            <li><span>Concatenated streams are synthetic (§3.4).</span></li>
+            <li><span>Single embedder, single judge model. The §3.7 negative is evidence about a 0.5B model prompted per turn, not about LLM judging in general.</span></li>
+          </ul>
+        </div>
+        <div class="stk">
+          <h4>Remaining work</h4>
+          <ul>
+            <li><b>1</b><span>The full 715-question end-task run through the local reader. Pipeline built and cached; needs the machine time.</span></li>
+            <li><b>2</b><span>Abstractive compression, to test whether the §3.4 negative is specific to extractive methods.</span></li>
+            <li><b>3</b><span>LongMemEval &mdash; a benchmark with genuinely long single conversations.</span></li>
+            <li><b>4</b><span>Online learning of the eviction policy, which is what would make a learned scorer deployable.</span></li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout" style="margin-top:16px">
+        <span class="lbl">Practical guidance, as it stands</span>
+        <b>Keep a scored subset whole; do not compress everything.</b> And denominate the budget in
+        bytes, including the index, or the comparison is not the one you think you are making.
+      </div>
+    </section>
+
+    </main>
+  </div>
+
+  <footer>
+    <div id="footStamp"></div>
+    MemGate &mdash; Capstone Project, SVKM&rsquo;s NMIMS Indore Campus.
+    Simar Singh Khanuja &amp; Yash Ramchandani.<br>
+    Every figure on this page is read from <span class="mono">memgate/results/*.csv</span> by
+    <span class="mono">frontend/build_data.py</span>. Nothing is typed by hand.
+  </footer>
+</div>
+
+<script src="data.js"></script>
+<script>
+(function(){
+"use strict";
+var D = window.MEMGATE;
+if (!D) { document.body.insertAdjacentHTML("afterbegin",
+  "<p style='padding:20px;color:#a3191f'>data.js did not load. Run <code>python3 frontend/build_data.py</code>.</p>"); return; }
+
+/* ---------------- shared ---------------- */
+var METRIC = "answer";                       /* "answer" | "strict" */
+var listeners = [];
+function onMetric(fn){ listeners.push(fn); fn(); }
+function setMetric(m){ METRIC = m; listeners.forEach(function(f){ f(); }); }
+function metricLabel(){ return METRIC === "answer" ? "Answer recall" : "Evidence (strict) recall"; }
+
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function pct(v,d){ return (v==null||isNaN(v)) ? "–" : v.toFixed(d==null?1:d) + "%"; }
+function signed(v,d){ var n=(v>=0?"+":"−")+Math.abs(v).toFixed(d==null?2:d); return n; }
+function ktok(n){ return n>=1024 ? (n/1024)+"K" : String(n); }
+
+/* series identity is fixed across every chart: colour follows the policy, never its rank */
+var SER = {
+  "P0":   { label:"P0 sliding-window",  color:"var(--s0)", dash:"5 4" },
+  "RAG":  { label:"RAG store-all",      color:"var(--s1)", dash:"" },
+  "P1A":  { label:"P1-A compress",      color:"var(--s2)", dash:"" },
+  "P1S":  { label:"P1-S select",        color:"var(--s3)", dash:"" }
+};
+function seriesOf(policy){
+  if (/^P0/.test(policy)) return "P0";
+  if (/^RAG/.test(policy)) return "RAG";
+  if (/^P1-A/.test(policy)) return "P1A";
+  if (/^P1-S/.test(policy)) return "P1S";
+  return null;
+}
+
+/* ---------------- tooltip ---------------- */
+function mkTip(host){
+  var t = document.createElement("div"); t.className = "tip"; host.appendChild(t);
+  return {
+    show:function(html,x,y){
+      t.innerHTML = html; t.style.opacity = 1;
+      var w = t.offsetWidth, hh = t.offsetHeight, hw = host.clientWidth;
+      var left = Math.max(2, Math.min(x + 14, hw - w - 2));
+      t.style.left = left + "px";
+      t.style.top  = Math.max(2, y - hh - 12) + "px";
+    },
+    hide:function(){ t.style.opacity = 0; }
+  };
+}
+
+/* ---------------- SVG helpers ---------------- */
+var NS = "http://www.w3.org/2000/svg";
+function el(name, attrs, text){
+  var e = document.createElementNS(NS, name);
+  for (var k in attrs) if (attrs[k] !== null && attrs[k] !== undefined) e.setAttribute(k, attrs[k]);
+  if (text != null) e.textContent = text;
+  return e;
+}
+function svgRoot(w,h){
+  var s = el("svg", { viewBox:"0 0 "+w+" "+h, role:"img" });
+  s.style.maxHeight = h + "px";
+  return s;
+}
+var LBL = { "font-family":'"IBM Plex Mono",monospace', "font-size":"10.5" };
+function tx(x,y,text,extra){
+  var a = { x:x, y:y, fill:"var(--ink-3)" };
+  for (var k in LBL) a[k]=LBL[k];
+  for (var k2 in (extra||{})) a[k2]=extra[k2];
+  return el("text", a, text);
+}
+
+/* ---------------- line chart ---------------- */
+/* opts: {xs, xLabel, yLabel, series:[{key,points:[y|null]}], fmtX, fmtY, yMax} */
+function lineChart(host, opts){
+  host.innerHTML = "";
+  var W = 760, H = 300, M = { t:14, r:118, b:38, l:46 };
+  var iw = W - M.l - M.r, ih = H - M.t - M.b;
+  var s = svgRoot(W, H);
+  var xs = opts.xs, n = xs.length;
+  var yMax = opts.yMax || (function(){
+    var m = 0; opts.series.forEach(function(se){ se.points.forEach(function(v){ if (v!=null && v>m) m=v; }); });
+    return Math.ceil(m/10)*10 || 10;
+  })();
+  var X = function(i){ return M.l + (n<2?iw/2:(iw*i)/(n-1)); };
+  var Y = function(v){ return M.t + ih - (ih*v)/yMax; };
+
+  /* grid + y ticks */
+  var step = yMax<=20?5:(yMax<=50?10:20);
+  for (var v=0; v<=yMax+0.001; v+=step){
+    s.appendChild(el("line",{x1:M.l,x2:M.l+iw,y1:Y(v),y2:Y(v),stroke:"var(--grid)","stroke-width":1}));
+    s.appendChild(tx(M.l-8, Y(v)+3.5, v+"%", {"text-anchor":"end"}));
+  }
+  /* x ticks */
+  xs.forEach(function(x,i){
+    s.appendChild(tx(X(i), M.t+ih+16, opts.fmtX(x), {"text-anchor":"middle"}));
+  });
+  s.appendChild(tx(M.l+iw/2, H-3, opts.xLabel, {"text-anchor":"middle", fill:"var(--ink-2)","letter-spacing":".06em"}));
+
+  /* lines */
+  var ends = [];
+  opts.series.forEach(function(se){
+    var c = SER[se.key];
+    var d = "", started = false;
+    se.points.forEach(function(v,i){
+      if (v==null){ started=false; return; }
+      d += (started?" L ":" M ") + X(i).toFixed(1) + " " + Y(v).toFixed(1); started = true;
+    });
+    s.appendChild(el("path",{ d:d, fill:"none", stroke:c.color, "stroke-width":2,
+      "stroke-dasharray":c.dash||null, "stroke-linejoin":"round", "stroke-linecap":"round" }));
+    se.points.forEach(function(v,i){
+      if (v==null) return;
+      s.appendChild(el("circle",{ cx:X(i), cy:Y(v), r:3.4, fill:c.color,
+        stroke:"var(--surface)", "stroke-width":2 }));
+    });
+    var last = -1; se.points.forEach(function(v,i){ if (v!=null) last=i; });
+    if (last>=0) ends.push({ x:X(last), y:Y(se.points[last]), y0:Y(se.points[last]), c:c });
+  });
+
+  /* direct labels -- identity is never colour-alone. Series that land on the same
+     value (RAG and P1-A coincide at S=16K) would print on top of each other, so the
+     stack is spread to a minimum gap and a leader line keeps each tied to its point. */
+  ends.sort(function(a,b){ return a.y - b.y; });
+  var GAP = 13;
+  for (var i=1;i<ends.length;i++)
+    if (ends[i].y - ends[i-1].y < GAP) ends[i].y = ends[i-1].y + GAP;
+  var over = ends.length ? ends[ends.length-1].y - (M.t+ih) : 0;
+  if (over > 0) ends.forEach(function(e){ e.y -= over; });
+  ends.forEach(function(e){
+    if (Math.abs(e.y - e.y0) > 1.5)
+      s.appendChild(el("path",{ d:"M "+(e.x+3)+" "+e.y0+" L "+(e.x+8)+" "+e.y,
+        stroke:e.c.color, "stroke-width":1, fill:"none", opacity:".55" }));
+    s.appendChild(el("text",{ x:e.x+11, y:e.y+3.6, fill:e.c.color,
+      "font-family":'"IBM Plex Mono",monospace', "font-size":"11", "font-weight":"500" }, e.c.label));
+  });
+
+  /* hover: nearest x, crosshair + tooltip */
+  var tip = mkTip(host);
+  var cross = el("line",{ y1:M.t, y2:M.t+ih, stroke:"var(--rule-2)", "stroke-width":1, opacity:0 });
+  s.appendChild(cross);
+  var hit = el("rect",{ x:M.l, y:M.t, width:iw, height:ih, fill:"transparent" });
+  s.appendChild(hit);
+  function move(ev){
+    var r = s.getBoundingClientRect();
+    var px = (ev.clientX - r.left) * (W / r.width);
+    var i = Math.max(0, Math.min(n-1, Math.round(((px - M.l)/iw) * (n-1))));
+    cross.setAttribute("x1", X(i)); cross.setAttribute("x2", X(i)); cross.setAttribute("opacity", 1);
+    var rows = opts.series.map(function(se){
+      var c = SER[se.key], v = se.points[i];
+      return "<div class='r'><span>" +
+        "<span style='display:inline-block;width:8px;height:8px;background:"+c.color+";margin-right:6px'></span>" +
+        esc(c.label) + "</span><b>" + (v==null?"–":v.toFixed(1)+"%") + "</b></div>";
+    }).join("");
+    var hostR = host.getBoundingClientRect();
+    tip.show("<b>"+esc(opts.fmtX(xs[i]))+"</b>" + rows,
+      (X(i)/W)*hostR.width, ev.clientY - hostR.top);
+  }
+  hit.addEventListener("mousemove", move);
+  hit.addEventListener("mouseleave", function(){ tip.hide(); cross.setAttribute("opacity",0); });
+  host.appendChild(s);
+}
+
+function legend(host, keys){
+  host.innerHTML = keys.map(function(k){
+    var c = SER[k];
+    return "<span class='it'><span class='ln' style='border-top-color:"+c.color+
+      (c.dash?";border-top-style:dashed":"")+"'></span>"+esc(c.label)+"</span>";
+  }).join("");
+}
+
+/* ---------------- horizontal bar chart ---------------- */
+/* rows: [{label, value, color, note, sub}] */
+function hbar(host, rows, opts){
+  opts = opts || {};
+  host.innerHTML = "";
+  var rowH = opts.rowH || 30, padT = 8, padB = 26;
+  var W = 760, labelW = opts.labelW || 230, valW = 68;
+  var H = padT + rows.length*rowH + padB;
+  var s = svgRoot(W, H);
+  var iw = W - labelW - valW - 12;
+  var lo = Math.min(0, Math.min.apply(null, rows.map(function(r){ return opts.lo!=null?opts.lo:r.value; })));
+  var hi = Math.max.apply(null, rows.map(function(r){ return r.value; }));
+  if (opts.hi != null) hi = Math.max(hi, opts.hi);
+  if (lo === hi) hi = lo + 1;
+  var pad = (hi-lo)*0.06; lo -= (lo<0?pad:0); hi += pad;
+  var X = function(v){ return labelW + (iw*(v-lo))/(hi-lo); };
+  var zero = X(Math.max(lo, Math.min(0, hi)));
+
+  s.appendChild(el("line",{x1:zero,x2:zero,y1:padT,y2:padT+rows.length*rowH,
+    stroke:"var(--rule-2)","stroke-width":1}));
+
+  var tip = mkTip(host);
+  rows.forEach(function(r,i){
+    var y = padT + i*rowH, h = Math.min(15, rowH-13);
+    var x0 = Math.min(zero, X(r.value)), x1 = Math.max(zero, X(r.value));
+    var g = el("g", {});
+    g.appendChild(el("rect",{ x:x0, y:y+(rowH-h)/2, width:Math.max(1.5,x1-x0), height:h,
+      fill:r.color, rx:2 }));
+    g.appendChild(el("text",{ x:labelW-10, y:y+rowH/2+4, "text-anchor":"end", fill:"var(--ink-2)",
+      "font-family":'"IBM Plex Mono",monospace', "font-size":"11.5" }, r.label));
+    g.appendChild(el("text",{ x:W-valW+2, y:y+rowH/2+4, fill:"var(--ink)",
+      "font-family":'"IBM Plex Mono",monospace', "font-size":"12", "font-weight":"500" },
+      r.display != null ? r.display : r.value.toFixed(1)));
+    if (r.sub) g.appendChild(el("text",{ x:W-valW+2, y:y+rowH/2+16, fill:"var(--ink-3)",
+      "font-family":'"IBM Plex Mono",monospace', "font-size":"10" }, r.sub));
+    var hitr = el("rect",{ x:0, y:y, width:W, height:rowH, fill:"transparent" });
+    g.appendChild(hitr);
+    if (r.note){
+      hitr.addEventListener("mousemove", function(ev){
+        var hostR = host.getBoundingClientRect();
+        tip.show("<b>"+esc(r.label)+"</b><div class='r'><span>"+esc(r.note)+"</span></div>",
+          ev.clientX-hostR.left, ev.clientY-hostR.top);
+      });
+      hitr.addEventListener("mouseleave", tip.hide);
+    }
+    s.appendChild(g);
+  });
+  if (opts.axis){
+    s.appendChild(el("text",{ x:labelW+iw/2, y:H-6, "text-anchor":"middle", fill:"var(--ink-2)",
+      "font-family":'"IBM Plex Mono",monospace', "font-size":"10.5", "letter-spacing":".06em" }, opts.axis));
+  }
+  host.appendChild(s);
+}
+
+/* ---------------- forest plot ---------------- */
+function forest(host, rows){
+  host.innerHTML = "";
+  var W = 760, labelW = 250, rowH = 38, padT = 24, padB = 30;
+  var H = padT + rows.length*rowH + padB;
+  var s = svgRoot(W, H);
+  var iw = W - labelW - 118;
+  var lo = Math.min.apply(null, rows.map(function(r){ return r.lo; }));
+  var hi = Math.max.apply(null, rows.map(function(r){ return r.hi; }));
+  var pad = (hi-lo)*0.12; lo -= pad; hi += pad;
+  var X = function(v){ return labelW + (iw*(v-lo))/(hi-lo); };
+
+  /* zero line -- the whole point of the panel */
+  s.appendChild(el("line",{ x1:X(0), x2:X(0), y1:padT-8, y2:padT+rows.length*rowH,
+    stroke:"var(--ink)", "stroke-width":1.5 }));
+  s.appendChild(tx(X(0), padT-13, "no effect", { "text-anchor":"middle", fill:"var(--ink-2)" }));
+  [-10,0,10,20].forEach(function(v){
+    if (v<lo||v>hi||v===0) return;
+    s.appendChild(el("line",{x1:X(v),x2:X(v),y1:padT-4,y2:padT+rows.length*rowH,
+      stroke:"var(--grid)","stroke-width":1}));
+  });
+
+  var tip = mkTip(host);
+  rows.forEach(function(r,i){
+    var y = padT + i*rowH + rowH/2;
+    var col = r.sig ? "var(--ink)" : "var(--ink-3)";
+    var g = el("g",{});
+    g.appendChild(el("line",{ x1:X(r.lo), x2:X(r.hi), y1:y, y2:y, stroke:col, "stroke-width":2 }));
+    [r.lo, r.hi].forEach(function(v){
+      g.appendChild(el("line",{ x1:X(v), x2:X(v), y1:y-5, y2:y+5, stroke:col, "stroke-width":2 }));
+    });
+    g.appendChild(el("circle",{ cx:X(r.delta), cy:y, r:5, fill:r.sig?"var(--accent)":"var(--surface)",
+      stroke:col, "stroke-width":2 }));
+    g.appendChild(el("text",{ x:labelW-12, y:y+4, "text-anchor":"end", fill:"var(--ink)",
+      "font-family":'"IBM Plex Mono",monospace', "font-size":"11.5" }, r.label));
+    g.appendChild(el("text",{ x:labelW-12, y:y+16, "text-anchor":"end", fill:"var(--ink-3)",
+      "font-family":'"IBM Plex Mono",monospace', "font-size":"10" }, r.metric));
+    g.appendChild(el("text",{ x:W-112, y:y+4, fill:"var(--ink)",
+      "font-family":'"IBM Plex Mono",monospace', "font-size":"12", "font-weight":"500" },
+      signed(r.delta,2)));
+    g.appendChild(el("text",{ x:W-112, y:y+16, fill:r.sig?"var(--ink-3)":"var(--accent-ink)",
+      "font-family":'"IBM Plex Mono",monospace', "font-size":"10" },
+      r.sig ? ("p = "+r.p) : ("n.s.  p = "+r.p)));
+    var hitr = el("rect",{ x:0, y:padT+i*rowH, width:W, height:rowH, fill:"transparent" });
+    g.appendChild(hitr);
+    hitr.addEventListener("mousemove", function(ev){
+      var hostR = host.getBoundingClientRect();
+      tip.show("<b>"+esc(r.label)+" — "+esc(r.metric)+"</b>" +
+        "<div class='r'><span>Δ</span><b>"+signed(r.delta,2)+" pts</b></div>" +
+        "<div class='r'><span>95% CI (clustered)</span><b>["+signed(r.lo,2)+", "+signed(r.hi,2)+"]</b></div>" +
+        "<div class='r'><span>McNemar</span><b>p = "+r.p+"</b></div>",
+        ev.clientX-hostR.left, ev.clientY-hostR.top);
+    });
+    hitr.addEventListener("mouseleave", tip.hide);
+    s.appendChild(g);
+  });
+  s.appendChild(el("text",{ x:labelW+iw/2, y:H-8, "text-anchor":"middle", fill:"var(--ink-2)",
+    "font-family":'"IBM Plex Mono",monospace', "font-size":"10.5" },
+    "points of recall  —  interval left of the line means the effect is not established"));
+  host.appendChild(s);
+}
+
+/* ================= §0 status ================= */
+(function(){
+  var m = D.meta;
+  document.getElementById("stamp").innerHTML =
+    "Data generated " + m.generated + " &nbsp;·&nbsp; commit " + m.commit +
+    " &nbsp;·&nbsp; " + m.tests + " tests passing";
+  document.getElementById("footStamp").innerHTML =
+    "Built " + m.generated + " from commit " + m.commit + " &nbsp;·&nbsp; " +
+    m.loc.toLocaleString() + " lines of Python &nbsp;·&nbsp; " + m.tests + " tests";
+  document.getElementById("statusMeta").textContent = "commit " + m.commit;
+
+  var full = D.storage.filter(function(r){ return r.store_budget===4096; });
+  var byS = {}; full.forEach(function(r){ byS[seriesOf(r.policy)] = r; });
+  var gap = (byS.P1S.answer_recall - byS.RAG.answer_recall)*100;
+
+  var tiles = [
+    { k:"Headline effect", v:signed(gap,1), u:" pts", c:"Answer recall, selection over oldest-first at identical storage" },
+    { k:"Benchmark", v:m.questions.toLocaleString(), c:"LoCoMo questions over "+m.turns.toLocaleString()+" turns, "+m.conversations+" conversations" },
+    { k:"Experiments", v:"9", c:"Runnable scripts, each producing a committed CSV" },
+    { k:"Test suite", v:m.tests, c:"Including three label-blindness invariants" },
+    { k:"Codebase", v:m.loc.toLocaleString(), u:" lines", c:"Python, no framework dependency" }
+  ];
+  document.getElementById("tiles").innerHTML = tiles.map(function(t){
+    return "<div class='tile'><div class='k'>"+esc(t.k)+"</div><div class='v'>"+esc(t.v)+
+      (t.u?"<small>"+esc(t.u)+"</small>":"")+"</div><div class='c'>"+esc(t.c)+"</div></div>";
+  }).join("");
+
+  var work = [
+    ["Harness, tiered store, policies P0/P1", "done", "Three tiers as a lifecycle; routing on eviction. 5,430 lines."],
+    ["LoCoMo wired, leak-free evaluation", "done", "The fact_id leak found and pinned by a regression test."],
+    ["Ablation study", "done", "23 configurations; retrieval worth −30.3, scored eviction −5.0."],
+    ["Storage budget — the corrected accounting", "done", "35 configurations. Selection beats compression at every S."],
+    ["Significance: clustered bootstrap + McNemar", "done", "Six comparisons. One reported as not significant."],
+    ["Scaling to 182×, byte accounting, learned scorer", "done", "Rate–distortion crossover falsified; index charged for."],
+    ["P2 LLM judge, built and evaluated", "done", "Loses to the regex by 5.87 points, CI excludes zero."],
+    ["End-task accuracy through a real reader", "part", "Pipeline, controls and cache built. 12-question pilot only."],
+    ["Abstractive compression", "open", "Would test whether the negative result is extractive-specific."],
+    ["LongMemEval — genuinely long conversations", "open", "Replaces the concatenated-stream stress test."],
+    ["Online learning of the eviction policy", "open", "What would make a learned scorer deployable."]
+  ];
+  var chipTxt = { done:"complete", part:"pilot only", open:"not started" };
+  document.getElementById("work").innerHTML = work.map(function(w,i){
+    return "<div class='work-row'><div class='i'>"+String(i+1).padStart(2,"0")+"</div>" +
+      "<div class='t'>"+esc(w[0])+"<span>"+esc(w[2])+"</span></div>" +
+      "<div><span class='chip "+w[1]+"'>"+chipTxt[w[1]]+"</span></div></div>";
+  }).join("");
+})();
+
+/* ================= §2 architecture ================= */
+(function(){
+  var host = document.getElementById("archDiagram");
+  var W = 760, H = 268;
+  var s = svgRoot(W, H);
+  function box(x,y,w,h,lines,opt){
+    opt = opt||{};
+    var g = el("g",{});
+    g.appendChild(el("rect",{ x:x, y:y, width:w, height:h, rx:3,
+      fill:opt.fill||"var(--surface-2)", stroke:opt.stroke||"var(--rule-2)", "stroke-width":1 }));
+    var fs = opt.fs||10.5, n = lines.length;
+    lines.forEach(function(t,i){
+      g.appendChild(el("text",{ x:x+w/2, y:y+h/2 + (i-(n-1)/2)*(fs+2.5) + fs/3,
+        "text-anchor":"middle", fill:opt.ink||"var(--ink)",
+        "font-family":'"IBM Plex Mono",monospace', "font-size":fs,
+        "font-weight":opt.bold?"600":"400" }, t));
+    });
+    s.appendChild(g);
+    return g;
+  }
+  function arrow(x1,y1,x2,y2,label,dash){
+    s.appendChild(el("path",{ d:"M "+x1+" "+y1+" L "+x2+" "+y2, stroke:"var(--rule-2)",
+      "stroke-width":1.4, "marker-end":"url(#ah)", "stroke-dasharray":dash||null, fill:"none" }));
+    if (label){
+      s.appendChild(el("text",{ x:(x1+x2)/2, y:(y1+y2)/2 - 5, "text-anchor":"middle",
+        fill:"var(--ink-3)", "font-family":'"IBM Plex Mono",monospace', "font-size":"9.5" }, label));
+    }
+  }
+  var defs = el("defs",{});
+  var mk = el("marker",{ id:"ah", viewBox:"0 0 8 8", refX:"7", refY:"4",
+    markerWidth:"7", markerHeight:"7", orient:"auto-start-reverse" });
+  mk.appendChild(el("path",{ d:"M 0 0.5 L 7.5 4 L 0 7.5 z", fill:"var(--rule-2)" }));
+  defs.appendChild(mk); s.appendChild(defs);
+
+  s.appendChild(tx(12, 16, "WRITE PATH — what to keep", { fill:"var(--ink-2)", "letter-spacing":".1em" }));
+  box(12, 26, 118, 40, ["incoming turn"]);
+  box(160, 26, 150, 40, ["decision engine","score once, on eviction"], { bold:true, fill:"var(--accent-wash)", stroke:"var(--accent)" });
+  arrow(130, 46, 158, 46);
+
+  box(352, 8, 150, 34, ["u ≥ τ_fact  →  Tier 3"], { fs:10 });
+  box(352, 48, 150, 34, ["u ≥ τ_low   →  Tier 2"], { fs:10 });
+  box(352, 88, 150, 34, ["otherwise  →  dropped"], { fs:10 });
+  arrow(310, 40, 350, 25); arrow(310, 46, 350, 65); arrow(310, 54, 350, 105);
+
+  s.appendChild(el("rect",{ x:534, y:8, width:214, height:114, rx:3, fill:"none",
+    stroke:"var(--rule)", "stroke-dasharray":"3 3" }));
+  s.appendChild(tx(544, 22, "TIERED STORE", { fill:"var(--ink-3)", "letter-spacing":".1em" }));
+  box(544, 28, 194, 26, ["Tier 1  short-term  ·  verbatim"], { fs:9.5 });
+  box(544, 58, 194, 26, ["Tier 2  working  ·  gists"], { fs:9.5 });
+  box(544, 88, 194, 26, ["Tier 3  long-term  ·  facts + vectors"], { fs:9.5 });
+  arrow(504, 25, 542, 41); arrow(504, 65, 542, 71); arrow(504, 105, 542, 101, null, "3 3");
+
+  s.appendChild(el("line",{ x1:12, x2:748, y1:140, y2:140, stroke:"var(--rule)", "stroke-width":1 }));
+  s.appendChild(tx(12, 162, "READ PATH — what to recall", { fill:"var(--ink-2)", "letter-spacing":".1em" }));
+  box(12, 172, 118, 40, ["new query"]);
+  box(160, 172, 132, 40, ["retrieve","semantic match"]);
+  box(322, 172, 150, 40, ["assemble context","to the token budget"], { bold:true });
+  box(502, 172, 118, 40, ["FROZEN LLM"], { fill:"var(--surface-2)", ink:"var(--ink-2)" });
+  box(650, 172, 98, 40, ["response"]);
+  arrow(130, 192, 158, 192);
+  arrow(292, 192, 320, 192);
+  arrow(472, 192, 500, 192);
+  arrow(620, 192, 648, 192);
+  arrow(641, 130, 300, 168, "recalled memory", "3 3");
+  s.appendChild(el("text",{ x:12, y:240, fill:"var(--ink-3)",
+    "font-family":'"IBM Plex Mono",monospace', "font-size":"9.5" },
+    "Nothing is trained. The base model is a black box — MemGate only controls what enters the prompt."));
+  s.appendChild(el("text",{ x:12, y:255, fill:"var(--ink-3)",
+    "font-family":'"IBM Plex Mono",monospace', "font-size":"9.5" },
+    "Tiers are a lifecycle, not a partition: everything enters Tier 1 and is routed once, when the budget binds."));
+  host.appendChild(s);
+})();
+
+/* ================= §3.1-3.2 frontier ================= */
+(function(){
+  var budgets = [512,1024,2048,4096,8192,16384];
+  var chart = document.getElementById("frontierChart");
+  var keys = ["P0","RAG","P1A","P1S"];
+  legend(document.getElementById("frontierLegend"), keys);
+
+  function rowFor(key, S){
+    return D.storage.filter(function(r){
+      return r.store_budget===S && seriesOf(r.policy)===key; })[0];
+  }
+  function val(r){ return r ? r[METRIC==="answer"?"answer_recall":"strict_recall"]*100 : null; }
+
+  var slider = document.getElementById("sSlider");
+  function draw(){
+    var series = keys.map(function(k){
+      return { key:k, points: budgets.map(function(S){ return val(rowFor(k,S)); }) };
+    });
+    lineChart(chart, { xs:budgets, series:series, xLabel:"STORAGE BUDGET S — tokens the policy may keep",
+      fmtX:function(x){ return ktok(x); } });
+    document.getElementById("frontierUnit").textContent = metricLabel() + " · context pinned at 2048";
+    document.getElementById("frontierMeta").textContent = metricLabel() + " · n = " + D.meta.questions;
+    readout();
+  }
+  function readout(){
+    var S = budgets[+slider.value];
+    document.getElementById("sValue").textContent = S.toLocaleString() + " tokens";
+    var cells = keys.map(function(k){
+      var r = rowFor(k,S), v = val(r), c = SER[k];
+      var d = "";
+      if (k!=="RAG" && k!=="P0"){
+        var base = val(rowFor("RAG",S));
+        d = signed(v-base,1) + " vs RAG";
+      }
+      return "<div class='cell'><div class='k'><span style='width:8px;height:8px;background:"+
+        c.color+";display:inline-block'></span>"+esc(c.label)+"</div><div class='v'>"+
+        pct(v)+"</div><div class='d'>"+esc(d||" ")+"</div></div>";
+    }).join("");
+    document.getElementById("frontierReadout").innerHTML = cells;
+  }
+  slider.addEventListener("input", readout);
+
+  onMetric(function(){
+    draw();
+    var c = document.getElementById("metricCallout");
+    if (METRIC === "strict"){
+      c.innerHTML = "<span class='lbl'>Read this switch carefully</span>" +
+        "On <b>evidence recall</b>, compression (P1-A) now appears to win — by +12.9 points at " +
+        "S = 8192. It does not. A demoted gist keeps the evidence <em>ids</em> of a turn whose text " +
+        "it has thrown away, and evidence recall credits the pointer. Switch back to answer recall, " +
+        "which checks the content, and the same policy <b>loses 6.9 points</b>. " +
+        "<b>Reporting only this metric would have shown compression winning.</b>";
+    } else {
+      c.innerHTML = "<span class='lbl'>The finding</span>" +
+        "<b>Selection pays; compression does not.</b> P1-S drops the lowest-utility turn when the " +
+        "cap binds; P1-A compresses it instead. Dropping wins at every storage budget. " +
+        "Now switch the metric at the top of the page to <b>evidence recall</b> — the ranking " +
+        "inverts, and that disagreement is the result.";
+    }
+  });
+})();
+
+/* ================= §3.3 significance ================= */
+(function(){
+  var label = { "P1-S select vs RAG":"P1-S select vs RAG",
+                "P1-S select vs P1-A adaptive":"P1-S select vs P1-A compress",
+                "P1-S select vs P0":"P1-S select vs P0 recency" };
+  var rows = D.significance.map(function(r){
+    var sig = !(r.conv_lo <= 0 && r.conv_hi >= 0);
+    return { label: label[r.comparison] || r.comparison,
+             metric: r.metric === "answer" ? "answer recall" : "evidence recall",
+             delta: r.delta, lo: r.conv_lo, hi: r.conv_hi, sig: sig,
+             p: r.mcnemar_p < 1e-4 ? r.mcnemar_p.toExponential(1) : r.mcnemar_p.toFixed(4) };
+  });
+  forest(document.getElementById("forestChart"), rows);
+
+  var t = document.getElementById("sigTable");
+  t.innerHTML = "<caption>Paired bootstrap, B = 10,000, resampled by conversation · exact McNemar · S = 4096</caption>" +
+    "<thead><tr><th>Comparison</th><th>Metric</th><th class='num'>Δ pts</th>" +
+    "<th class='num'>95% CI (clustered)</th><th class='num'>McNemar p</th><th>Verdict</th></tr></thead><tbody>" +
+    rows.map(function(r){
+      return "<tr"+(r.sig?"":" class='hi'")+"><td>"+esc(r.label)+"</td><td>"+esc(r.metric)+"</td>" +
+        "<td class='num'><b>"+signed(r.delta,2)+"</b></td>" +
+        "<td class='num'>["+signed(r.lo,2)+", "+signed(r.hi,2)+"]</td>" +
+        "<td class='num'>"+r.p+"</td>" +
+        "<td>"+(r.sig?"<span class='chip done'>significant</span>":
+                      "<span class='chip part'>not significant</span>")+"</td></tr>";
+    }).join("") + "</tbody>";
+})();
+
+/* ================= §3.4 scaling ================= */
+(function(){
+  var chart = document.getElementById("scalingChart");
+  var keys = ["RAG","P1A","P1S"];
+  legend(document.getElementById("scalingLegend"), keys);
+  var budgets = [1024,2048,4096], S = 2048;
+
+  var seg = document.getElementById("scalingSeg");
+  seg.innerHTML = budgets.map(function(b){
+    return "<button type='button' data-s='"+b+"' aria-pressed='"+(b===S)+"'>S = "+ktok(b)+"</button>";
+  }).join("");
+  seg.addEventListener("click", function(ev){
+    var b = ev.target.getAttribute && ev.target.getAttribute("data-s");
+    if (!b) return;
+    S = +b;
+    Array.prototype.forEach.call(seg.children, function(btn){
+      btn.setAttribute("aria-pressed", btn.getAttribute("data-s")===b);
+    });
+    draw();
+  });
+
+  function keyOf(p){
+    if (/^RAG/.test(p)) return "RAG";
+    if (/^P1-A/.test(p)) return "P1A";
+    if (/^P1-S/.test(p)) return "P1S";
+    return null;
+  }
+  function draw(){
+    var rows = D.scaling.filter(function(r){ return r.store_budget===S; });
+    var ratios = []; rows.forEach(function(r){ if (ratios.indexOf(r.ratio)<0) ratios.push(r.ratio); });
+    ratios.sort(function(a,b){ return a-b; });
+    var series = keys.map(function(k){
+      return { key:k, points: ratios.map(function(x){
+        var m = rows.filter(function(r){ return r.ratio===x && keyOf(r.policy)===k; })[0];
+        return m ? m[METRIC==="answer"?"answer":"strict"] : null; }) };
+    });
+    lineChart(chart, { xs:ratios, series:series,
+      xLabel:"COMPRESSION RATIO — conversation tokens ÷ storage budget",
+      fmtX:function(x){ return Math.round(x)+"×"; } });
+    document.getElementById("scalingUnit").textContent = metricLabel();
+  }
+  onMetric(draw);
+})();
+
+/* ================= §3.5 byte accounting ================= */
+(function(){
+  var chart = document.getElementById("costChart");
+  var keys = ["P0","RAG","P1A","P1S"];
+  legend(document.getElementById("costLegend"), keys);
+  function keyOf(p){
+    if (/^P0/.test(p)) return "P0";
+    if (/^RAG/.test(p)) return "RAG";
+    if (/^P1-A/.test(p)) return "P1A";
+    if (/^P1-S/.test(p)) return "P1S";
+    return null;
+  }
+  var budgets = []; D.cost.forEach(function(r){
+    if (budgets.indexOf(r.store_budget)<0) budgets.push(r.store_budget); });
+  budgets.sort(function(a,b){ return a-b; });
+  onMetric(function(){
+    var series = keys.map(function(k){
+      return { key:k, points: budgets.map(function(b){
+        var m = D.cost.filter(function(r){ return r.store_budget===b && keyOf(r.policy)===k; })[0];
+        return m ? m[METRIC==="answer"?"answer":"strict"] : null; }) };
+    });
+    lineChart(chart, { xs:budgets, series:series,
+      xLabel:"STORAGE BUDGET — bytes, text plus the 1,536-byte embedding per item",
+      fmtX:function(x){ return (x/1024)+" KiB"; } });
+    document.getElementById("costUnit").textContent = metricLabel() + " · index charged for";
+  });
+})();
+
+/* ================= §3.6-3.7 scorer ================= */
+(function(){
+  var chart = document.getElementById("judgeChart");
+  var short = {
+    "P0 recency (no scoring)": "P0  recency, no judgement",
+    "P1 heuristic (hand)": "P1  regex + shallow NER",
+    "P2 LLM judge (Qwen-0.5B)": "P2  LLM judge, Qwen2.5-0.5B",
+    "P3 learned (LOCO, bound)": "P3  learned, LOCO bound"
+  };
+  var color = {
+    "P0 recency (no scoring)":"var(--s0)",
+    "P1 heuristic (hand)":"var(--s1)",
+    "P2 LLM judge (Qwen-0.5B)":"var(--s2)",
+    "P3 learned (LOCO, bound)":"var(--s3)"
+  };
+  onMetric(function(){
+    var f = METRIC==="answer" ? "answer" : "strict";
+    var rows = D.judge.map(function(r){
+      return { label: short[r.scorer]||r.scorer, value: r[f], color: color[r.scorer],
+               display: r[f].toFixed(1)+"%",
+               note: "Δ vs P1 (answer recall) "+signed(r.vs_p1,2)+" pts, CI ["+
+                     signed(r.ci_lo,2)+", "+signed(r.ci_hi,2)+"]" };
+    });
+    hbar(chart, rows, { lo:0, labelW:236, rowH:36,
+      axis: metricLabel().toUpperCase()+"  —  everything but the scorer held fixed" });
+    document.getElementById("judgeUnit").textContent = metricLabel();
+  });
+
+  var t = document.getElementById("judgeTable");
+  t.innerHTML = "<caption>Scorer swap at S = 4096, context 2048 — policy, retrieval and compression pinned</caption>" +
+    "<thead><tr><th>Scorer</th><th>What it sees</th><th class='num'>Evidence</th>" +
+    "<th class='num'>Answer</th><th class='num'>Δ vs P1</th><th class='num'>95% CI</th></tr></thead><tbody>" +
+    D.judge.map(function(r){
+      var sees = { "P0 recency (no scoring)":"nothing — position only",
+                   "P1 heuristic (hand)":"the turn, via regex + NER cues",
+                   "P2 LLM judge (Qwen-0.5B)":"the turn, in isolation",
+                   "P3 learned (LOCO, bound)":"the turn + fitted corpus base rates" }[r.scorer] || "";
+      var isP1 = /^P1 /.test(r.scorer);
+      return "<tr"+(isP1?" class='hi'":"")+"><td><span class='swatch' style='background:"+
+        color[r.scorer]+"'></span>"+esc(short[r.scorer]||r.scorer)+"</td><td>"+esc(sees)+"</td>" +
+        "<td class='num'>"+r.strict.toFixed(1)+"%</td>" +
+        "<td class='num'><b>"+r.answer.toFixed(1)+"%</b></td>" +
+        "<td class='num'>"+(isP1?"—":signed(r.vs_p1,2))+"</td>" +
+        "<td class='num'>"+(isP1?"—":"["+signed(r.ci_lo,2)+", "+signed(r.ci_hi,2)+"]")+"</td></tr>";
+    }).join("") + "</tbody>";
+})();
+
+/* ================= ablation ================= */
+(function(){
+  var chart = document.getElementById("ablChart");
+  var arch = D.ablations.filter(function(r){ return r.family==="architecture"; });
+  var full = arch.filter(function(r){ return r.configuration==="full system"; })[0];
+  onMetric(function(){
+    var rows = arch.filter(function(r){ return r.configuration!=="full system"; })
+      .map(function(r){
+        var d = METRIC==="answer"
+          ? (r.answer_recall - full.answer_recall)*100
+          : (r.strict_recall - full.strict_recall)*100;
+        return { label: r.configuration.replace(/^- /,"without "), value: d,
+                 color: d < 0 ? "var(--s1)" : "var(--s2)",
+                 display: signed(d,1),
+                 note: "evidence "+signed((r.strict_recall-full.strict_recall)*100,1)+
+                       " pts · answer "+signed((r.answer_recall-full.answer_recall)*100,1)+
+                       " pts · context "+Math.round(r.avg_tokens)+" tokens" };
+      }).sort(function(a,b){ return a.value - b.value; });
+    hbar(chart, rows, { labelW:210, rowH:30,
+      axis:"CHANGE IN "+metricLabel().toUpperCase()+" WHEN THE COMPONENT IS REMOVED (POINTS)" });
+    document.getElementById("ablUnit").textContent = metricLabel() + " · S = 4096, adaptive mode";
+  });
+})();
+
+/* ================= §3.8 end task ================= */
+(function(){
+  var chart = document.getElementById("endtaskChart");
+  var order = ["closed-book","P0 sliding-window","RAG store-all","P1-A adaptive","P1-S select","Oracle"];
+  var color = { "closed-book":"var(--ink-3)", "P0 sliding-window":"var(--s0)",
+                "RAG store-all":"var(--s1)", "P1-A adaptive":"var(--s2)",
+                "P1-S select":"var(--s3)", "Oracle":"var(--ink-2)" };
+  var rows = order.map(function(name){
+    var r = D.endtask.filter(function(x){ return x.arm===name; })[0];
+    if (!r) return null;
+    return { label: name, value: r.accuracy, color: color[name],
+             display: r.accuracy.toFixed(1)+"%",
+             sub: Math.round(r.accuracy*r.n/100)+"/"+r.n,
+             note: "F1 "+r.f1.toFixed(1)+"  ·  answer present in context "+
+                   r.answer_recall.toFixed(1)+"%  ·  accuracy when present "+
+                   r.acc_when_present.toFixed(0)+"% (n="+r.n_present+")" };
+  }).filter(Boolean);
+  hbar(chart, rows, { lo:0, labelW:180, rowH:36,
+    axis:"EXACT-MATCH ACCURACY — 12 QUESTIONS, ONE FIXED READER" });
+  var m = D.endtask[0];
+  document.getElementById("endtaskMeta").textContent = "pilot · n = " + m.n + " · " + m.model;
+})();
+
+/* ================= §5 stack ================= */
+(function(){
+  var groups = [
+    ["Language & runtime", [
+      ["Python 3.10", "no framework dependency; stdlib fallbacks throughout"],
+      ["NumPy", "vector maths, cosine retrieval, bootstrap resampling"],
+      ["dataclasses", "MemoryItem / Turn / Question as typed records"]
+    ]],
+    ["Models, run locally", [
+      ["all-MiniLM-L6-v2", "384-d sentence embeddings for retrieval and supersession"],
+      ["Qwen2.5-0.5B-Instruct", "the P2 salience judge, read off digit-token logits"],
+      ["Qwen2.5-1.5B-4bit", "the end-task reader, greedy, 32 new tokens"],
+      ["sentence-transformers", "embedder loading; degrades to hashed bag-of-words"],
+      ["PyTorch (MPS)", "local inference on Apple silicon"],
+      ["tiktoken cl100k_base", "exact token accounting, not a word-count proxy"]
+    ]],
+    ["Evaluation & statistics", [
+      ["LoCoMo", "10 conversations, 5,882 turns, 1,527 scoreable questions"],
+      ["Paired bootstrap", "B = 10,000, resampled by conversation, not by question"],
+      ["Exact McNemar", "paired discordant-pair test on the same questions"],
+      ["scikit-learn", "logistic scorer under leave-one-conversation-out"],
+      ["matplotlib", "the five publication figures"]
+    ]],
+    ["Discipline", [
+      ["unittest", "61 tests, three of them label-blindness invariants"],
+      ["HF_HUB_OFFLINE", "set on import — a run that can fetch is a run not pinned"],
+      ["Generation caches", "judge and reader cached by (model, prompt) hash, resumable"],
+      ["git", "every results CSV committed alongside the code that made it"]
+    ]]
+  ];
+  document.getElementById("stackGrid").innerHTML = groups.map(function(g){
+    return "<div class='stk'><h4>"+esc(g[0])+"</h4><ul>" + g[1].map(function(it){
+      return "<li><b>"+esc(it[0])+"</b><span>"+esc(it[1])+"</span></li>";
+    }).join("") + "</ul></div>";
+  }).join("");
+})();
+
+/* ================= nav rail + metric toggle ================= */
+(function(){
+  var secs = [].slice.call(document.querySelectorAll("main section"));
+  var names = { status:"Status", question:"The question", architecture:"How it works",
+    frontier:"Storage budget", significance:"Significance", scaling:"Rate–distortion",
+    cost:"Byte accounting", scorer:"The scorer", ablation:"Ablation",
+    endtask:"End task", method:"Measurement", stack:"What was used", next:"What remains" };
+  var refs = { status:"§0", question:"§1", architecture:"§2", frontier:"3.2",
+    significance:"3.3", scaling:"3.4", cost:"3.5", scorer:"3.7", ablation:"3.6",
+    endtask:"3.8", method:"§4", stack:"§5", next:"§6" };
+  document.getElementById("railList").innerHTML = secs.map(function(s){
+    return "<li><a href='#"+s.id+"' data-t='"+s.id+"'><span class='n'>"+refs[s.id]+
+      "</span>"+esc(names[s.id])+"</a></li>";
+  }).join("");
+  var links = {};
+  [].forEach.call(document.querySelectorAll("nav.rail a"), function(a){
+    links[a.getAttribute("data-t")] = a; });
+  if ("IntersectionObserver" in window){
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if (e.isIntersecting){
+          for (var k in links) links[k].classList.remove("on");
+          if (links[e.target.id]) links[e.target.id].classList.add("on");
+        }
+      });
+    }, { rootMargin:"-70px 0px -70% 0px" });
+    secs.forEach(function(s){ io.observe(s); });
+  }
+
+  var seg = document.getElementById("metricSeg");
+  seg.addEventListener("click", function(ev){
+    var m = ev.target.getAttribute && ev.target.getAttribute("data-metric");
+    if (!m) return;
+    [].forEach.call(seg.children, function(b){
+      b.setAttribute("aria-pressed", b.getAttribute("data-metric")===m); });
+    setMetric(m);
+  });
+})();
+
+})();
+</script>
+</body>
+</html>
