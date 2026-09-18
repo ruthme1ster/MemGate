@@ -95,7 +95,7 @@ data = {
     "ablations": read("ablations_2048.csv",
                       ("strict_recall", "delta_pts", "soft_recall",
                        "answer_recall", "avg_tokens", "budget")),
-    # §3.8  end-task accuracy -- a 12-question smoke run, NOT a result
+    # §3.8  end-task accuracy -- the full 715-question run through a fixed reader
     "endtask": read("endtask.csv",
                     ("n", "accuracy", "f1", "answer_recall", "acc_when_present",
                      "n_present", "acc_when_absent", "n_absent")),

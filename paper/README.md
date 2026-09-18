@@ -13,20 +13,29 @@ paper/
 ## Compiling
 
 There is **no LaTeX distribution on this machine**, so the paper has never been
-compiled here — only structurally checked. Compile it on Overleaf:
+compiled here — only structurally checked. A local install was attempted and is
+not available on this network: `brew install tectonic` fails because Homebrew
+cannot reach `ghcr.io` to fetch its portable Ruby. Compile on Overleaf instead.
 
-1. New Project → Upload Project → zip the whole `paper/` directory.
-2. Overleaf ships `IEEEtran.cls` and `IEEEtran.bst`, so nothing else is needed.
-3. Set the compiler to **pdfLaTeX** and the main document to `main.tex`.
+```sh
+sh paper/bundle.sh        # regenerates tables, runs check.py, writes the zip
+```
 
-Locally, once a TeX distribution is installed:
+Then: **overleaf.com → New Project → Upload Project**, pick
+`MemGate_paper_overleaf.zip`, and set **Compiler: pdfLaTeX**, **Main document:
+main.tex**. Overleaf ships `IEEEtran.cls` and `IEEEtran.bst`, so nothing else is
+needed. If citations render as `[?]`, recompile once more — BibTeX needs the
+second pass.
+
+The zip itself is gitignored: everything in it is already tracked, so
+committing it would duplicate the repository.
+
+Once a TeX distribution is available:
 
 ```bash
 cd paper
 pdflatex main && bibtex main && pdflatex main && pdflatex main
 ```
-
-Two passes after `bibtex` are required or the citations render as `[?]`.
 
 ## Before every commit
 

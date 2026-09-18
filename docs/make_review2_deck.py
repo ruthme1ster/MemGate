@@ -290,7 +290,7 @@ table(sl, [
     ["Significance: bootstrap + exact McNemar", "*Complete*", "clustered by conversation, B = 10,000"],
     ["Scaling to 182× · byte accounting · learned scorer", "*Complete*", "three separate sweeps"],
     ["P2 LLM judge — built and evaluated", "*Complete*", "single-component swap, with CIs"],
-    ["End-task accuracy through a real reader", "Pilot only", "pipeline + cache built; 12-question run"],
+    ["End-task accuracy through a real reader", "*Complete*", "full 715-question run; results/endtask.csv"],
     ["Abstractive compression · LongMemEval · online learning", "Not started", "scoped, with effort estimates"],
 ], top, size=19, col_w=[8, 2.4, 7.8])
 band(sl, [("The headline:  "),
@@ -707,9 +707,9 @@ band(sl, "The diagnosis is what the judge is shown: it rates each turn in isolat
 # 17 — end task
 # =========================================================================
 sl = slide()
-top = head(sl, "End-task accuracy — built, and honestly labelled",
+top = head(sl, "End-task accuracy — the gap survives a real reader",
            "Every number so far is context recall: did the evidence reach the prompt? "
-           "That is the ceiling on accuracy, not accuracy.")
+           "That is the ceiling on accuracy. This is the accuracy.")
 rows = [["Arm", "Accuracy", "F1", "Answer present in context"]]
 for name_ in ["closed-book", "P0 sliding-window", "RAG store-all", "P1-A adaptive",
               "P1-S select", "Oracle"]:
@@ -724,11 +724,11 @@ bullets(sl, [
      "Closed-book is the floor — a model answering from parametric knowledge would make every "
      "policy look good. Oracle is the ceiling: exactly the cited evidence, perfectly selected."),
 ], top + 3.8, size=21, width=10.4)
-band(sl, [("This is a 12-question smoke run, not a result.", ""),
-          (" It is shown because the pipeline, both controls and the generation cache work end "
-           "to end — the remaining experiment is wired and ready. The full 715-question run is "
-           "several hours of local generation and has not been made.",)],
-     H - 2.1, height=1.45, label="Read this before the numbers")
+band(sl, [("+6.0 points of the +8.7 recall gap convert into correct answers", ""),
+          (" — 95% CI [+3.3, +9.1] clustered by conversation, which is 69% of the ceiling gap. "
+           "All 715 answer-recoverable questions, one fixed reader. Closed-book scores 1.7%, so "
+           "the margin above it is the memory system and almost nothing else.",)],
+     H - 2.1, height=1.45, label="What the reader actually answered")
 
 # =========================================================================
 # 18 — measurement findings

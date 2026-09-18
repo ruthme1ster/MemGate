@@ -50,6 +50,16 @@ working sessions. Written so it can be picked up cold later.
 > beat selection — is **falsified to 182x compression** (§24.1).
 >
 > `REPORT.md` at the project root is the paper-ready writeup.
+>
+> ## ⚠ SESSION 5 — the critical path is closed
+>
+> §29 completes the **full 715-question end-task run**. The headline claim no
+> longer rests on context recall alone: **+6.0 of the +8.7 points are realised
+> as correct answers** (95% CI [+3.3, +9.1] clustered, 69% of the ceiling gap),
+> against a **1.7% closed-book floor**.
+>
+> No earlier number is withdrawn by this. The end-task pilot figures quoted
+> anywhere as "12 questions" are superseded by §29.3 — do not present them.
 
 ---
 
@@ -1496,3 +1506,102 @@ Two tests pin it (**61 passed**, up from 59). The second matters more than the
 first: if offline mode had made MiniLM unloadable, `_get_model()` would have
 fallen back to hashing bag-of-words and quietly relabelled every subsequent
 result — the exact failure §16.3 describes, re-armed by the fix for it.
+
+---
+
+# Session 5 — 17 September 2026
+
+## 29. The end-task run, completed — the gap survives a real reader
+
+The critical path named in §26 and in every deliverable since is closed. The
+full **715-question** end-task run is made, and the project's central claim now
+rests on what a model *answered*, not on what reached its prompt.
+
+### 29.1 The weights were gone, and the test suite said so
+
+All three vendored models had been stripped from `memgate/models/` — only the
+config and tokenizer files remained. The symptom was honest and immediate:
+
+```
+FAIL  MiniLM still resolves with the Hub pinned off
+      fell back to hash-bow/256d -- results would be mislabelled
+```
+
+This is precisely the guard §28.2 added, catching precisely the failure it was
+written for. Without it, every number produced in this session would have been
+silently relabelled from the hashing baseline. Re-fetched all three (MiniLM
+90,868,376 B; Qwen2.5-0.5B 988,097,824 B; Qwen2.5-1.5B-4bit 868,628,559 B),
+each verified against its safetensors header rather than its filename, and the
+suite returned to **61 passed, 0 failed**.
+
+### 29.2 The two-phase runner, and the proof it changed nothing
+
+Holding PyTorch + MiniLM (assembly) and MLX (generation) resident together
+exceeds 8 GB, so `run_endtask.py` grew `--dump-contexts` / `--from-contexts`:
+each phase runs in its own process and releases its memory before the next.
+
+The refactor's correctness was not asserted, it was *observed*. Contexts were
+assembled by the new two-phase code; the generation cache is keyed by a hash of
+the exact prompt text and had been filled by the old single-phase code. Four
+arms came back **100% cached** (2,860 entries). Had the refactor altered one
+byte of any context, every one of those would have missed.
+
+Cache state at the start: **3,831 of 4,290 (89.3%)** — an earlier interrupted
+run had got most of the way. 451 generations remained, 13.5 min at 0.25–0.51
+gen/s.
+
+### 29.3 The result
+
+| Arm | Accuracy | F1 | Answer present | Acc. given present |
+|---|---|---|---|---|
+| closed-book *(floor)* | 1.7% | 5.0 | 0.0% | — |
+| P0 sliding-window | 8.3% | 11.9 | 18.3% | 40.5% |
+| RAG store-all | 12.4% | 17.7 | 28.1% | 42.3% |
+| P1-A adaptive | 13.1% | 19.9 | 30.1% | 42.3% |
+| **P1-S select** | **18.5%** | 24.7 | 36.8% | 49.4% |
+| Oracle *(ceiling)* | 67.3% | 75.7 | 100.0% | 67.3% |
+
+```
+ceiling gap  (answer recall) : +8.7 pts
+realised gap (accuracy)      : +6.0 pts   95% CI [+3.3, +9.1]   significant
+conversion                   : 69% of the ceiling gap
+closed-book floor            : 1.7%
+```
+
+Three things worth keeping:
+
+1. **The closed-book floor is 1.7%.** Parametric knowledge contributes almost
+   nothing on LoCoMo, so the margin above that floor is the memory layer and
+   essentially nothing else. Had this been high, every arm would have looked
+   good for reasons having nothing to do with memory.
+2. **The advantage arrives through both routes.** P1-S places the answer in
+   context more often (36.8% vs 28.1%) *and* its contexts are used more
+   successfully when it does (49.4% vs 42.3%). Only the first was predicted.
+3. **The oracle converts only 67.3%.** A perfect memory layer still loses a
+   third of its questions to this reader, which locates the remaining headroom
+   in the reader rather than in selection — and bounds what any policy could
+   deliver here.
+
+Accuracy given the answer was *absent* is below 1% for every arm: the reader is
+not guessing its way to credit, so the accuracy column is reading the memory
+layer and not the benchmark's phrasing.
+
+### 29.4 Propagated
+
+`endtask.csv` (n=715) → `paper/make_tables.py` (the n<715 guard released and
+`tables/endtask.tex` written for the first time) → `make_figures.py` (fig5) →
+`frontend/build_data.py` + the dashboard's stale "pilot, not a result" callout →
+`docs/make_review2_deck.py` slide 17 → `REPORT.md` §3.8 → `memgate/README.md`.
+
+In `paper/main.tex`: a new Section~\ref{sec:endtask} with the table and fig5, a
+seventh contribution, the abstract, the conclusion, and the limitation that read
+"we therefore report no end-task accuracy figures here" replaced by the one that
+now bounds the claim — *a single reader model*.
+
+### 29.5 Next
+
+The measurement track is complete and the critical path is closed. What remains
+is scoped rather than blocking: abstractive compression, LongMemEval, online
+learning. **These are for the final review, not Review 2** — a rushed half-run
+of any of them would be worth less than the clean "scoped, with estimates" slide
+that already exists.

@@ -34,6 +34,11 @@ We further show that charging for the embedding index — normally given away
 free — inverts the ranking below 64 KiB, where a policy with no index at all
 beats every retrieval-based method.
 
+Measured through a fixed local reader over all 715 answer-recoverable
+questions, **+6.0 of those +8.7 points survive as correct answers** (95% CI
+[+3.3, +9.1] clustered by conversation) — 69% of the ceiling gap — against a
+closed-book floor of 1.7%.
+
 ---
 
 ## 1. Problem
@@ -289,6 +294,42 @@ turns *turned out* to be cited, absorbing the corpus-level base rates the judge
 has no way to see. That an LLM prompted per-turn underperforms a regex, at
 ~15 minutes of GPU per corpus against microseconds, is worth stating plainly.
 
+### 3.8 The gap survives a real reader
+
+Every result above is context recall, which is the *ceiling* on accuracy rather
+than accuracy. Each assembled context is now sent through one fixed reader
+(Qwen2.5-1.5B-Instruct-4bit, greedy, 32 new tokens) and scored with the same
+normaliser the answer metric applies to the context, so "the answer reached the
+context" and "the answer reached the output" are one predicate applied at two
+points. All 715 answer-recoverable questions, with two controls.
+
+| Arm | Accuracy | F1 | Answer present | Acc. given present |
+|---|---|---|---|---|
+| closed-book *(floor)* | 1.7% | 5.0 | 0.0% | — |
+| P0 sliding window | 8.3% | 11.9 | 18.3% | 40.5% |
+| RAG store-all | 12.4% | 17.7 | 28.1% | 42.3% |
+| P1-A adaptive *(compress)* | 13.1% | 19.9 | 30.1% | 42.3% |
+| **P1-S select** *(drop)* | **18.5%** | 24.7 | 36.8% | 49.4% |
+| Oracle *(ceiling)* | 67.3% | 75.7 | 100.0% | 67.3% |
+
+| | |
+|---|---|
+| ceiling gap (answer recall) | +8.7 pts |
+| **realised gap (accuracy)** | **+6.0 pts**, 95% CI [+3.3, +9.1] clustered |
+| conversion | **69%** of the ceiling gap |
+
+**The closed-book floor is 1.7%**, so parametric knowledge contributes almost
+nothing here and the margin above it is the memory layer. The advantage arrives
+through both available routes: P1-S puts the answer in context more often
+(36.8% vs 28.1%), *and* the contexts it assembles are used more successfully
+when it does (49.4% vs 42.3%). Accuracy given the answer was **absent** is below
+1% for every arm, which is what a reader that does not guess its way to credit
+looks like.
+
+The oracle converts a complete context into a correct answer only 67.3% of the
+time. That bounds what any memory policy can deliver through this reader, and
+places the remaining headroom in the reader rather than in the memory layer.
+
 ---
 
 ## 4. Methodological findings
@@ -332,9 +373,10 @@ the eviction order.
 * **10 conversations.** Clustered intervals are wide because the cluster count
   is small. Effects are reported with those intervals, and the one that does
   not survive clustering is reported as not significant.
-* **Context recall, not end-task accuracy.** We measure whether the needed
-  evidence reached the context. That is the *ceiling* on end-task accuracy, not
-  accuracy itself. Closing this needs a generative model in the loop.
+* **A single reader model.** §3.8 uses one 1.5B four-bit model decoding
+  greedily. The *ordering* of policies is what we claim; the absolute
+  accuracies are properties of that reader, and the oracle's 67.3% shows much
+  of the remaining error is the reader rather than the memory layer.
 * **Extractive compression only.** P1-A selects words; it does not rewrite.
   Abstractive re-summarisation may retain more content per token, and the
   negative result about compression is stated for the extractive case.
@@ -361,6 +403,9 @@ already done. Measured honestly, the more useful result is what *doesn't* work:
    reachable on this benchmark — to 182× compression, keeping a selected subset
    whole beats compressing everything.
 4. Charging for the embedding index inverts the ranking below ~40 KiB.
+5. Through a real reader, **+6.0 of the +8.7 points are realised as correct
+   answers** — 69% of the ceiling gap — so the advantage is not merely
+   available, it is delivered.
 
 **Practical guidance: keep a scored subset whole; do not compress everything.**
 And denominate the budget in bytes, including the index, or the comparison is
@@ -368,7 +413,8 @@ not the one you think you are making.
 
 ### Future work
 
-* End-task accuracy with a generative model reading the assembled context.
+* A larger reader, to separate the memory layer's remaining headroom from the
+  reader's (the oracle arm converts only 67.3% of complete contexts).
 * Abstractive compression, to test whether §3.4's negative result is specific to
   extractive methods.
 * A benchmark with genuinely long single conversations (LongMemEval).

@@ -33,6 +33,9 @@ SCALING = load("scaling.csv", ("store_budget", "ratio", "strict", "answer"))
 COST = load("cost_model.csv", ("strict", "answer", "store_budget"))
 JUDGE = load("judge_eval.csv", ("strict", "answer", "vs_p1", "ci_lo", "ci_hi"))
 ABL = load("ablations_2048.csv", ("strict_recall", "delta_pts", "answer_recall"))
+ENDTASK = load("endtask.csv", ("n", "accuracy", "f1", "answer_recall",
+                              "acc_when_present", "n_present",
+                              "acc_when_absent", "n_absent"))
 
 
 EOL = " " + "\\" * 2   # LaTeX row terminator
@@ -196,4 +199,62 @@ Ratio & RAG & P1-A & P1-S & P1-S $-$ P1-A \\
 \bottomrule
 \end{tabular}""")
 
-print(f"\nwrote 6 table fragments to {OUT}")
+# -------------------------------------------------------------- Table VIII
+# End-task accuracy through a fixed reader. Accuracy is NOT bounded by answer
+# recall -- a model can guess -- so the decomposition is reported rather than a
+# single number: acc|present is what a memory policy can influence, acc|absent
+# is what it cannot.
+label = {"closed-book": "Closed-book \\emph{(floor)}",
+         "P0 sliding-window": "P0 sliding window",
+         "RAG store-all": "RAG store-all",
+         "P1-A adaptive": "P1-A adaptive (compress)",
+         "P1-S select": "P1-S select (drop)",
+         "Oracle": "Oracle \\emph{(ceiling)}"}
+# The full answer-recoverable population (main.tex Section~\ref{sec:metrics}).
+# A run shorter than this is a pilot: README.md states that no end-task number
+# enters the paper until the full run completes, and this guard enforces it
+# rather than trusting the author to remember.
+FULL_ENDTASK_N = 715
+
+rows = []
+for arm in ["closed-book", "P0 sliding-window", "RAG store-all",
+            "P1-A adaptive", "P1-S select", "Oracle"]:
+    r = [x for x in ENDTASK if x["arm"] == arm][0]
+    acc = "\\textbf{%.1f}" % r["accuracy"] if arm == "P1-S select" else "%.1f" % r["accuracy"]
+    # acc|present is undefined when the answer never reached the context: the
+    # closed-book and P0 arms have n_present = 0, and printing 0.0 there would
+    # read as "the reader had the answer and missed it" rather than "the
+    # subgroup is empty".
+    if int(r["n_present"]) == 0:
+        cond = "--"
+    else:
+        cond = "%.1f" % r["acc_when_present"]
+    rows.append("%s & %s & %.1f & %.1f & %s%s"
+                % (label[arm], acc, r["f1"], r["answer_recall"], cond, EOL))
+n = int(ENDTASK[0]["n"])
+if n < FULL_ENDTASK_N:
+    stale = os.path.join(OUT, "endtask.tex")
+    if os.path.exists(stale):
+        os.remove(stale)
+        print(f"  endtask.tex REMOVED (stale pilot table)")
+    print(f"  end-task SKIPPED: n={n} per arm is a pilot, need {FULL_ENDTASK_N}."
+          f"\n    Finish run_endtask.py, then re-run this script.")
+else:
+    write("endtask.tex", r"""\begin{tabular}{@{}lrrrr@{}}
+\toprule
+Arm & Acc. & F1 & Ans.\ present & Acc.$\mid$present \\
+\midrule
+""" + "\n".join(rows) + r"""
+\bottomrule
+\end{tabular}""")
+    print(f"  (end-task table built from n={n} per arm)")
+    for arm in ["closed-book", "P0 sliding-window", "RAG store-all",
+                "P1-A adaptive", "P1-S select", "Oracle"]:
+        r = [x for x in ENDTASK if x["arm"] == arm][0]
+        print("     %-26s acc=%5.1f  present=%3d/%d  acc|present=%s"
+              % (arm, r["accuracy"], int(r["n_present"]), n,
+                 "n/a" if int(r["n_present"]) == 0
+                 else "%.1f" % r["acc_when_present"]))
+
+written = len([f for f in os.listdir(OUT) if f.endswith(".tex")])
+print(f"\nwrote {written} table fragments to {OUT}")

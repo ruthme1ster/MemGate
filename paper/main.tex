@@ -51,9 +51,11 @@ selection widens. Charging the budget for the embedding index, which is
 normally left out, reverses the ranking below about 40\,KiB, where a policy
 that stores no index at all performs best. Finally, an LLM-judged salience
 scorer performs worse than a regular-expression heuristic by $5.87$ points,
-with the confidence interval excluding zero. We also report three measurement
-errors that changed our own results, each found by an invariant rather than by
-inspection.
+with the confidence interval excluding zero. Through a fixed local reader over
+all 715 answer-recoverable questions, $+6.0$ points of the selection advantage
+convert into correct answers (95\% CI $[+3.3, +9.1]$), which is 69\% of the
+recall gap. We also report three measurement errors that changed our own
+results, each found by an invariant rather than by inspection.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -121,11 +123,15 @@ policies below roughly 40\,KiB (Section~\ref{sec:bytes}).
 0.5B instruction-tuned judge performs worse than a hand-written heuristic by
 $5.87$ points (Section~\ref{sec:scorer}).
 
+\item An end-task evaluation through a fixed reader, which measures how much of
+the recall advantage is converted into correct answers rather than assumed
+(Section~\ref{sec:endtask}).
+
 \item Three measurement errors that affected our own results, with the checks
 that detected them (Section~\ref{sec:threats}).
 \end{enumerate}
 
-Four of these six results are negative or corrective. We consider this a useful
+Four of these seven results are negative or corrective. We consider this a useful
 outcome. Described only as a three-tier memory layer, the system would
 duplicate work that has already been done; measured against controls, it
 indicates which parts of that design actually pay for themselves.
@@ -560,6 +566,55 @@ while the fitted bound P3 shows that headroom is available.}
 \label{fig:scorer}
 \end{figure}
 
+\subsection{End-task accuracy}
+\label{sec:endtask}
+
+Every result above is context recall, which bounds end-task accuracy without
+measuring it. We therefore send each assembled context through one fixed reader,
+Qwen2.5-1.5B-Instruct-4bit decoding greedily for at most 32 tokens, and score
+the output with the same normaliser the answer-recall metric applies to the
+context. ``The answer reached the context'' and ``the answer reached the
+output'' are then one predicate evaluated at two points in the pipeline, so the
+ceiling comparison is exact rather than approximate. The run covers all 715
+answer-recoverable questions with two controls: a closed-book arm that receives
+no memory at all, and an oracle arm that receives exactly the cited evidence.
+
+Table~\ref{tab:endtask} reports the outcome. The closed-book floor is 1.7\%,
+so parametric knowledge contributes almost nothing on this benchmark and the
+margin above that floor is attributable to the memory layer. P1-S reaches
+18.5\% against RAG's 12.4\%. Resampling by conversation as before, the realised
+gap is $+6.0$ points with a 95\% interval of $[+3.3, +9.1]$, which is 69\% of
+the $+8.7$-point recall gap between the same two arms.
+
+Accuracy is not bounded by answer recall, since a reader may guess, so the
+table separates the two regimes. Accuracy given that the answer was present is
+49.4\% for P1-S against 42.3\% for RAG, while accuracy given that it was absent
+is below 1\% for every arm. The selection advantage therefore arrives through
+both available routes: P1-S places the answer in context more often, and the
+contexts it assembles are also the ones the reader uses more successfully. The
+oracle arm converts a complete context into a correct answer 67.3\% of the
+time, which bounds what any memory policy can deliver through this reader and
+locates the remaining headroom in the reader rather than in the memory layer.
+
+\begin{table}[t]
+\caption{End-task accuracy through one fixed reader at $S=4096$ with context
+2048, over all 715 answer-recoverable questions. Acc.$\mid$present is accuracy
+restricted to the questions whose answer reached the context; it is undefined
+for the arms that never place one.}
+\label{tab:endtask}
+\centering
+\small
+\input{tables/endtask}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/fig5_endtask.pdf}
+\caption{Reader accuracy by memory policy, with the closed-book floor and the
+oracle ceiling. The ordering matches the recall ordering, at a lower level.}
+\label{fig:endtask}
+\end{figure}
+
 %% ======================================================================
 \section{Threats to Validity}
 \label{sec:threats}
@@ -613,12 +668,12 @@ the aggregate metrics.
 analysis and leaves few clusters, so the intervals are wide. We report them,
 and report the one effect that does not survive as not significant.
 
-\emph{Context recall is an upper bound.} We measure whether the required
-evidence reached the context, not whether the model then answered correctly. An
-end-task evaluation through a fixed local reader has been implemented, with a
-closed-book floor and an oracle ceiling as controls, but at the time of writing
-it has only been validated on a pilot too small to support a claim. We
-therefore report no end-task accuracy figures here.
+\emph{A single reader model.} The end-task evaluation of
+Section~\ref{sec:endtask} uses one 1.5B four-bit model decoding greedily. The
+ordering of policies is what we claim; the absolute accuracies are properties
+of that reader, and the oracle arm's 67.3\% shows that a substantial part of
+the remaining error is the reader rather than the memory layer. A larger reader
+would raise every arm and could compress or widen the margins between them.
 
 \emph{Extractive compression only.} P1-A selects words and does not rewrite
 them. Our negative result for compression is stated for the extractive case,
@@ -657,8 +712,11 @@ results above changed in sign or in magnitude once a measurement error was
 removed, and none of those errors was visible in the aggregate numbers they
 affected.
 
-Future work follows directly from the limitations. The end-task evaluation
-needs to be completed at full scale. Abstractive compression would test whether
+Measured through a fixed reader rather than at the retrieval level, $+6.0$ of
+those $+8.7$ points survive as correct answers, so the advantage is realised
+rather than merely available.
+
+Future work follows directly from the limitations. Abstractive compression would test whether
 the negative result is specific to extractive methods. A benchmark with
 genuinely long single conversations, such as LongMemEval, would replace the
 concatenated-stream stress test. Finally, learning the eviction policy online

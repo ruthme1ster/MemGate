@@ -556,17 +556,17 @@ footer{border-top:2px solid var(--ink);padding:22px 0 60px;font-family:"IBM Plex
       output with the same normaliser, so &ldquo;the answer reached the context&rdquo; and
       &ldquo;the answer reached the output&rdquo; are one predicate applied at two points.</p>
       <div class="flag" style="border-color:var(--accent);border-style:solid;margin:0 0 16px">
-        <span class="lbl" style="color:var(--accent-ink)">Pilot, not a result</span>
-        The table below is a <b>12-question smoke run</b>. It demonstrates that the pipeline,
-        the two controls and the generation cache work end to end. <b>It is far too small to
-        support any claim</b>, and is shown here only as evidence that the remaining experiment is
-        wired and ready. The full 715-question run is hours of local generation and has not been
-        made.
+        <span class="lbl" style="color:var(--accent-ink)">The gap survives a real reader</span>
+        Over all <b>715 answer-recoverable questions</b>: the recall advantage of selection over
+        FIFO is <b>+8.7 points</b>, and <b>+6.0 points</b> of it convert into correct answers
+        (95% CI [+3.3, +9.1] clustered by conversation) &mdash; <b>69% of the ceiling gap</b>.
+        Closed-book scores 1.7%, so almost everything the reader gets right, it gets right
+        because the memory layer put it there.
       </div>
       <div class="panel">
         <div class="panel-head">
           <h3>Reader accuracy by memory policy</h3>
-          <span class="unit">n = 12 &middot; smoke run</span>
+          <span class="unit">n = 715 &middot; full run</span>
         </div>
         <div class="chart" id="endtaskChart"></div>
       </div>
@@ -1021,7 +1021,7 @@ function forest(host, rows){
     ["Significance: clustered bootstrap + McNemar", "done", "Six comparisons. One reported as not significant."],
     ["Scaling to 182×, byte accounting, learned scorer", "done", "Rate–distortion crossover falsified; index charged for."],
     ["P2 LLM judge, built and evaluated", "done", "Loses to the regex by 5.87 points, CI excludes zero."],
-    ["End-task accuracy through a real reader", "part", "Pipeline, controls and cache built. 12-question pilot only."],
+    ["End-task accuracy through a real reader", "done", "Full 715-question run. +6.0 points realised, 69% of the ceiling gap."],
     ["Abstractive compression", "open", "Would test whether the negative result is extractive-specific."],
     ["LongMemEval — genuinely long conversations", "open", "Replaces the concatenated-stream stress test."],
     ["Online learning of the eviction policy", "open", "What would make a learned scorer deployable."]
@@ -1358,9 +1358,9 @@ function forest(host, rows){
                    r.acc_when_present.toFixed(0)+"% (n="+r.n_present+")" };
   }).filter(Boolean);
   hbar(chart, rows, { lo:0, labelW:180, rowH:36,
-    axis:"EXACT-MATCH ACCURACY — 12 QUESTIONS, ONE FIXED READER" });
+    axis:"EXACT-MATCH ACCURACY — 715 QUESTIONS, ONE FIXED READER" });
   var m = D.endtask[0];
-  document.getElementById("endtaskMeta").textContent = "pilot · n = " + m.n + " · " + m.model;
+  document.getElementById("endtaskMeta").textContent = "full run · n = " + m.n + " · " + m.model;
 })();
 
 /* ================= §5 stack ================= */

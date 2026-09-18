@@ -185,7 +185,9 @@ def build_contexts(data, arms, qsel):
         for arm, factory in arms.items():
             if arm == "closed-book":
                 for q in keep:
-                    out[arm].append({"conv": ci, "q": q, "ctx": "", "present": False})
+                    out[arm].append({"conv": ci, "q": q, "qtext": q.text,
+                                     "answer": q.answer, "ctx": "",
+                                     "present": False})
                 continue
             pol = factory()
             for t in turns:
@@ -197,7 +199,8 @@ def build_contexts(data, arms, qsel):
                 else:
                     ctx = pol.build_context(q.text, CONTEXT_BUDGET)
                 present = set(answer_tokens(q.answer)) <= set(answer_tokens(ctx.text))
-                out[arm].append({"conv": ci, "q": q, "ctx": ctx.text,
+                out[arm].append({"conv": ci, "q": q, "qtext": q.text,
+                                 "answer": q.answer, "ctx": ctx.text,
                                  "present": present, "tokens": ctx.tokens})
     return out
 
@@ -210,11 +213,32 @@ def main():
                     help="random subsample of questions (seeded)")
     ap.add_argument("--store-budget", type=int, default=STORE_BUDGET)
     ap.add_argument("--model", default=None)
+    ap.add_argument("--dump-contexts", metavar="PATH",
+                    help="assemble contexts, write them to PATH, and exit "
+                         "without loading the reader")
+    ap.add_argument("--from-contexts", metavar="PATH",
+                    help="skip assembly and read contexts from PATH")
     args = ap.parse_args()
     S = args.store_budget
 
     print("\nMemGate — end-task accuracy through a real reader model")
     print("=" * 86)
+
+    # Two-phase mode. Assembling contexts needs the benchmark, PyTorch and
+    # MiniLM; generating needs the MLX reader. Holding both resident is what
+    # exceeds an 8 GB machine, so --dump-contexts / --from-contexts lets each
+    # phase run in its own process and release its memory before the next.
+    # The generated text is unaffected: the prompt is built from the same
+    # context string either way, which the (model, prompt) cache proves --
+    # if a dumped context differed by one byte, every prior entry would miss.
+    if args.from_contexts:
+        with open(args.from_contexts) as f:
+            ctxs = json.load(f)
+        n_ctx = sum(len(v) for v in ctxs.values())
+        print(f"  contexts loaded from {os.path.basename(args.from_contexts)}: "
+              f"{n_ctx} across {len(ctxs)} arms (assembly skipped)")
+        return run_reader(ctxs, args, S)
+
     data = load_locomo()
     info = backend_info()
     print(f"  backends: embedder={info['embedder']}  tokenizer={info['tokenizer']}")
@@ -253,6 +277,25 @@ def main():
     ctxs = build_contexts(data, arms, qsel)
     print(f"  contexts assembled in {time.time()-t0:.1f}s\n")
 
+    if args.dump_contexts:
+        # the live Question object is not serialisable and is no longer needed:
+        # qtext and answer were copied onto every record above
+        dump = {a: [{k: v for k, v in r.items() if k != "q"} for r in recs]
+                for a, recs in ctxs.items()}
+        with open(args.dump_contexts, "w") as f:
+            json.dump(dump, f)
+        size = os.path.getsize(args.dump_contexts) / 1048576
+        print(f"  wrote {args.dump_contexts} "
+              f"({sum(len(v) for v in dump.values())} contexts, {size:.1f} MB)")
+        print("  reader not loaded; run again with --from-contexts to generate")
+        return 0
+
+    return run_reader(ctxs, args, S)
+
+
+def run_reader(ctxs, args, S):
+    """Generation phase: needs the MLX reader only, never the embedder."""
+    t0 = time.time()
     reader = Reader(args.model)
     have = reader.load_cache()
     print(f"  reader: {os.path.basename(reader.model_name)}   "
@@ -267,11 +310,11 @@ def main():
         pres_hit = pres_n = abs_hit = abs_n = 0
         outcomes, convs, presents = [], [], []
         for r in recs:
-            q = r["q"]
-            prompt = (NO_CTX.format(q=q.text) if arm == "closed-book"
-                      else WITH_CTX.format(ctx=r["ctx"], q=q.text))
+            qtext, answer = r["qtext"], r["answer"]
+            prompt = (NO_CTX.format(q=qtext) if arm == "closed-book"
+                      else WITH_CTX.format(ctx=r["ctx"], q=qtext))
             pred = reader.answer(prompt)
-            c, f1 = score(pred, q.answer)
+            c, f1 = score(pred, answer)
             done += 1
             if c is None:
                 continue

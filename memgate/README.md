@@ -163,6 +163,10 @@ rate–distortion prediction that compression must eventually win is falsified t
 182x compression. Charging for the embedding index inverts the ranking below
 ~40 KiB, where a policy with no index at all wins.
 
+**Through a real reader, +6.0 of those +8.7 points are realised as correct
+answers** (95% CI [+3.3, +9.1] clustered, 69% of the ceiling gap), over all 715
+answer-recoverable questions against a 1.7% closed-book floor.
+
 > We do **not** claim an evidence-recall improvement over RAG: +1.96 points does
 > not survive clustering (p = 0.16). Only the answer-recall claim stands.
 
@@ -406,9 +410,8 @@ Three readings, all significant under conversation-level clustering:
 1. ~~Find the second crossover~~ — done: falsified to 182x (`run_scaling.py`).
 2. ~~P2 (LLM judge)~~ — done: a local Qwen2.5-0.5B judge (`memgate/judge.py`).
 3. ~~Charge for the embeddings~~ — done: `cost_mode="bytes"` (`run_cost_model.py`).
-4. **End-task accuracy through a real model** — the single most valuable
-   remaining experiment. Context recall is its ceiling, and the local model now
-   makes it reachable.
+4. ~~End-task accuracy through a real model~~ — done: **+6.0 of the +8.7 points
+   realised**, 69% of the ceiling gap (`run_endtask.py`, 715 questions).
 5. **Abstractive compression** — the negative result is stated for *extractive*
    compression; a rewriting summariser may retain more per token.
 6. **A genuinely long benchmark** (LongMemEval) rather than concatenated streams.

@@ -34,7 +34,7 @@ end and their outputs are committed as CSVs.
 | Learned scorer, leave-one-conversation-out | **Complete** | `results/learned_scorer.csv` |
 | P2 LLM judge, built **and evaluated** | **Complete** | `results/judge_eval.csv` |
 | Publication figures | **Complete** | `results/figures/fig1–fig5` |
-| End-task accuracy through a real reader | **Pilot only** | pipeline + cache built; 12-question smoke run |
+| End-task accuracy through a real reader | **Complete** | `results/endtask.csv`, full 715-question run |
 | Abstractive compression | Not started | scoped in §9 |
 | LongMemEval (genuinely long conversations) | Not started | scoped in §9 |
 | Online learning of the eviction policy | Not started | scoped in §9 |
@@ -272,27 +272,34 @@ The diagnosis is what the judge is *shown*: it rates each turn **in isolation**,
 and salience is not a property of a turn on its own. A phone number matters
 because something later asks for it.
 
-### 4.7 End-task accuracy — pipeline built, **pilot only**
+### 4.7 End-task accuracy — **the gap survives a real reader**
 
-The single most valuable remaining experiment. Six arms through one fixed reader
-(Qwen2.5-1.5B-Instruct-4bit, greedy, 32 new tokens), scored with the same
-normaliser as the answer-presence metric, with two controls the comparison
-cannot be read without: **closed-book** (the floor every arm must beat to have
-contributed anything) and **oracle** (the ceiling).
+Six arms through one fixed reader (Qwen2.5-1.5B-Instruct-4bit, greedy, 32 new
+tokens), scored with the same normaliser as the answer-presence metric, with two
+controls the comparison cannot be read without: **closed-book** (the floor every
+arm must beat to have contributed anything) and **oracle** (the ceiling). All
+**715 answer-recoverable questions**.
 
-| Arm | Accuracy | F1 | Answer present |
-|---|---|---|---|
-| closed-book | 8.3% | 12.5 | 0% |
-| P0 sliding-window | 8.3% | 9.7 | 0% |
-| RAG store-all | 0.0% | 12.5 | 0% |
-| P1-A adaptive | 25.0% | 25.3 | 33.3% |
-| **P1-S select** | **33.3%** | **44.7** | 41.7% |
-| Oracle | 66.7% | 76.9 | 100% |
+| Arm | Accuracy | F1 | Answer present | Acc. given present |
+|---|---|---|---|---|
+| closed-book *(floor)* | 1.7% | 5.0 | 0.0% | — |
+| P0 sliding-window | 8.3% | 11.9 | 18.3% | 40.5% |
+| RAG store-all | 12.4% | 17.7 | 28.1% | 42.3% |
+| P1-A adaptive | 13.1% | 19.9 | 30.1% | 42.3% |
+| **P1-S select** | **18.5%** | **24.7** | 36.8% | 49.4% |
+| Oracle *(ceiling)* | 67.3% | 75.7 | 100.0% | 67.3% |
 
-> **This is a 12-question smoke run, not a result.** It is committed because the
-> pipeline, the two controls and the generation cache are what matter, and they
-> work end to end. It is far too small to support any claim. The full
-> 715-question run is several hours of local generation and has not been made.
+| | |
+|---|---|
+| ceiling gap (answer recall) | +8.7 pts |
+| **realised gap (accuracy)** | **+6.0 pts**, 95% CI [+3.3, +9.1] clustered |
+| conversion | **69%** of the ceiling gap |
+
+The closed-book floor is **1.7%**, so the margin above it is the memory layer
+and almost nothing else. P1-S wins through both available routes: it places the
+answer in context more often (36.8% vs 28.1%) *and* its contexts are used more
+successfully when it does (49.4% vs 42.3%). The oracle converts only 67.3% of
+complete contexts, which locates the remaining headroom in the reader.
 
 ---
 
@@ -449,7 +456,7 @@ Stated in full, because each one bounds a claim above.
 
 | # | Work | Why it matters | Effort | Target |
 |---|---|---|---|---|
-| 1 | **Full 715-question end-task run** | Converts the whole project from a ceiling to an accuracy claim. Pipeline, controls and cache are already built and validated on 12 questions | ~4–6 h of local generation, resumable | September 2026 |
+| 1 | ~~Full 715-question end-task run~~ | **Done** (§4.7). +6.0 of the +8.7 points realised as correct answers, 69% of the ceiling gap | completed 17 September 2026 | ✅ |
 | 2 | **Abstractive compression** | The compression negative is stated for extractive methods only; a rewriting summariser may retain more content per token, and would either overturn or strengthen the finding | 1 working session | October 2026 |
 | 3 | **LongMemEval** | Replaces the concatenated-stream stress test with genuinely long single conversations | 1–2 sessions | October 2026 |
 | 4 | **Online learning of the eviction policy** | The only route that makes a learned scorer deployable — P3 currently needs future questions | 2 sessions | November 2026 |
