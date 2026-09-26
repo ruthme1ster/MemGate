@@ -309,3 +309,117 @@ def _assert_locomo_wellformed(sid, turns, questions):
         if missing:
             raise AssertionError(f"{sid}: evidence not in conversation: {sorted(missing)}")
     return True
+
+
+# --------------------------------------------------------------- LongMemEval
+DEFAULT_LME_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "data", "longmemeval", "longmemeval_s_cleaned.json")
+
+
+def _lme_has_answer(turn) -> bool:
+    """Is this turn marked as evidence?
+
+    READ THIS BEFORE SIMPLIFYING IT. `has_answer` is serialised as the STRINGS
+    "True", "False" and "None", not as JSON booleans. `bool("False")` is True,
+    so the obvious `if turn.get("has_answer")` marks every turn in the haystack
+    as evidence -- and the failure is silent, because every policy then scores
+    near 100% and the benchmark looks easy instead of broken. The same class of
+    bug as §13's leak: ground truth quietly flowing somewhere it should not.
+    """
+    v = turn.get("has_answer")
+    if isinstance(v, str):
+        return v.strip().lower() == "true"
+    return bool(v)
+
+
+def load_longmemeval(path: str = DEFAULT_LME_PATH, limit: int = 0):
+    """Load LongMemEval into the same (sid, turns, questions) shape as LoCoMo.
+
+    WHY THIS BENCHMARK EXISTS IN THIS PROJECT
+    -----------------------------------------
+    §24.1 tested the rate-distortion crossover by concatenating up to ten LoCoMo
+    conversations, and stated the caveat plainly: a concatenated stream is not a
+    natural long conversation, because each question concerns one constituent
+    and the others act as distractors. LongMemEval supplies the real thing --
+    38 to 62 sessions and ~400-600 turns of genuine single-thread history per
+    question -- so the retention claim can be checked on length that was not
+    manufactured.
+
+    SHAPE DIFFERENCE, AND WHY IT IMPROVES THE STATISTICS
+    ----------------------------------------------------
+    LoCoMo is ten conversations each carrying many questions, so intervals are
+    clustered over ten units and are correspondingly wide (§24.4, and the one
+    claim that did not survive clustering). LongMemEval is one haystack PER
+    question: 500 independent items, each returned here as its own
+    (sid, turns, questions) triple with exactly one question. Clustering by
+    conversation therefore means clustering by question, and 500 independent
+    units is a far better basis for an interval than ten.
+
+    GROUND TRUTH IS CARRIED, NEVER CONSULTED
+    ----------------------------------------
+    Evidence turns are marked by `has_answer` (see `_lme_has_answer` for the
+    string trap). That flag is an EVALUATION LABEL of exactly the kind
+    store.py's invariant forbids any policy decision from reading, so it is
+    mapped onto `Turn.fact_id` -- the same channel LoCoMo's evidence ids use,
+    already covered by the label-invariance tests.
+
+    Items whose haystack contains no marked evidence turn are dropped (21 of
+    500 in the cleaned release). They are unanswerable by construction, the same
+    treatment `load_locomo` gives dangling evidence.
+
+    `category` carries LongMemEval's own question type as a string rather than
+    being forced onto LoCoMo's 1-5 integers. The taxonomies are genuinely
+    different, and mapping one onto the other would invent equivalences that the
+    per-category breakdown would then report as fact.
+    """
+    with open(path) as f:
+        raw = json.load(f)
+
+    out, dropped_no_ev, dropped_empty_ans = [], 0, 0
+    for sample in raw[:limit] if limit else raw:
+        qid = sample["question_id"]
+        turns: List[Turn] = []
+        evidence, by_id = [], {}
+        for s_pos, session in enumerate(sample.get("haystack_sessions", [])):
+            for idx, t in enumerate(session):
+                uid = f"{qid}/s{s_pos}t{idx}"
+                text = t.get("content", "") or ""
+                by_id[uid] = text
+                turns.append(Turn(session=s_pos, index=idx,
+                                  speaker=t.get("role", "user"),
+                                  text=text, fact_id=uid))
+                if _lme_has_answer(t):
+                    evidence.append(uid)
+
+        if not evidence:
+            dropped_no_ev += 1
+            continue
+        ans = str(sample.get("answer", "") or "")
+        if not ans.strip():
+            dropped_empty_ans += 1
+            continue
+
+        ev_text = " ".join(by_id.get(e, "") for e in evidence)
+        aw = answer_tokens(ans)
+        recoverable = bool(aw) and set(aw) <= set(answer_tokens(ev_text))
+        qtype = sample.get("question_type", "unknown")
+        question = Question(
+            text=sample["question"], gold_fact_id=evidence[0],
+            gold_evidence=evidence,
+            asked_after_session=max(0, len(sample.get("haystack_sessions", [])) - 1),
+            kind=qtype, category=qtype, answer=ans,
+            answer_recoverable=recoverable)
+
+        _assert_locomo_wellformed(qid, turns, [question])
+        out.append((qid, turns, [question]))
+
+    if not out:
+        raise ValueError(f"no items parsed from {path}")
+    n_turns = sum(len(t) for _, t, _ in out)
+    n_rec = sum(1 for _, _, qs in out for q in qs if q.answer_recoverable)
+    print(f"  LongMemEval: {len(out)} items, {n_turns} turns "
+          f"({n_turns // max(1, len(out))} per item), {n_rec} answer-recoverable "
+          f"(dropped {dropped_no_ev} without evidence, "
+          f"{dropped_empty_ans} without an answer)")
+    return out

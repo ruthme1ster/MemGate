@@ -39,7 +39,8 @@ class ThreeTierStore:
                  store_budget: Optional[int] = None,
                  demote_on_pressure: bool = True,
                  scored_eviction: bool = True,
-                 cost_mode: str = "tokens", vector_bytes: int = 1536):
+                 cost_mode: str = "tokens", vector_bytes: int = 1536,
+                 summariser=None):
         self.short_capacity = short_capacity
         self.working_capacity_tokens = working_capacity_tokens
         self.promote_threshold = promote_threshold
@@ -69,6 +70,11 @@ class ThreeTierStore:
         # turns whole pays one vector each. Token accounting cannot see that.
         self.cost_mode = cost_mode
         self.vector_bytes = vector_bytes
+        # How a stored item becomes a SHORTER stored item. None = the extractive
+        # rule in compress.py, which is what every result through §29 used.
+        # Swapping it is the abstractive-compression experiment; see
+        # abstractive.py for why the swap has to reach every site at once.
+        self.summariser = summariser
         self._enforcing = False
         self.evicted = 0
         self.demoted = 0
@@ -156,6 +162,26 @@ class ThreeTierStore:
             if len(merged) >= half and half == len(oldest):
                 break
 
+    def _gist(self, text: str, max_words: int) -> str:
+        """The single site where a stored item becomes a shorter stored item.
+
+        Demotion under pressure and Tier-2 consolidation both route through
+        here, so swapping `summariser` swaps the compressor everywhere at once.
+        That matters for the comparison: applying an abstractive summariser to
+        the demotion path alone would measure a mixture of two compressors and
+        attribute the result to one of them.
+
+        Order of precedence is deliberate. An injected summariser wins; failing
+        that, `informative_compress` selects between the extractive rule and the
+        head-truncation ablation it replaced. With `summariser=None` this is
+        exactly the behaviour every result through §29 was produced with.
+        """
+        if self.summariser is not None:
+            return self.summariser(text, max_words)
+        if self.informative_compress:
+            return informative_head(text, max_words)
+        return " ".join(text.split()[:max_words])
+
     def _merge_chunked(self, items: List[MemoryItem],
                        total_target: int) -> List[MemoryItem]:
         """Re-summarise into several gists, each at most `chunk_tokens`.
@@ -169,10 +195,8 @@ class ThreeTierStore:
             if it.fragments:
                 frags.extend(it.fragments)
             else:
-                head = (informative_head(it.text, self.merge_head_words)
-                        if self.informative_compress
-                        else " ".join(it.text.split()[:self.merge_head_words]))
-                frags.append((tuple(it.evidence_ids), head))
+                frags.append((tuple(it.evidence_ids),
+                              self._gist(it.text, self.merge_head_words)))
 
         kept, used = [], 0
         for ids, txt in reversed(frags):
@@ -240,10 +264,8 @@ class ThreeTierStore:
             if it.fragments:
                 frags.extend(it.fragments)          # already fragment-accounted
             else:
-                head = (informative_head(it.text, self.merge_head_words)
-                        if self.informative_compress
-                        else " ".join(it.text.split()[:self.merge_head_words]))
-                frags.append((tuple(it.evidence_ids), head))
+                frags.append((tuple(it.evidence_ids),
+                              self._gist(it.text, self.merge_head_words)))
 
         kept, used = [], 0
         for ids, txt in reversed(frags):            # newest first
@@ -410,9 +432,7 @@ class ThreeTierStore:
         gist still claims its id -- which is why the answer-presence metric
         (§19) exists and is reported alongside.
         """
-        gist = (informative_head(it.text, self.merge_head_words)
-                if self.informative_compress
-                else " ".join(it.text.split()[:self.merge_head_words]))
+        gist = self._gist(it.text, self.merge_head_words)
         if self.cost_mode == "bytes":
             # A demoted gist still carries its own vector, so shortening the
             # text only pays if the text was the expensive part. Under byte

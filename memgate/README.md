@@ -412,6 +412,22 @@ Three readings, all significant under conversation-level clustering:
 3. ~~Charge for the embeddings~~ — done: `cost_mode="bytes"` (`run_cost_model.py`).
 4. ~~End-task accuracy through a real model~~ — done: **+6.0 of the +8.7 points
    realised**, 69% of the ceiling gap (`run_endtask.py`, 715 questions).
-5. **Abstractive compression** — the negative result is stated for *extractive*
-   compression; a rewriting summariser may retain more per token.
-6. **A genuinely long benchmark** (LongMemEval) rather than concatenated streams.
+5. **Abstractive compression** — built (`run_abstractive.py`), but the only
+   result on disk is **one conversation** (n=149). One cluster leaves the paired
+   bootstrap nothing to resample, so every interval in `results/abstractive.csv`
+   is degenerate (`ci_lo == ci_hi == delta`) and its `significant` column is an
+   artefact of that. Needs all ten conversations before it is quotable.
+6. ~~A genuinely long benchmark (LongMemEval)~~ — **done, and it did not go our
+   way** (`run_longmemeval.py`, SESSION_RECORD §30). At storage matched to
+   LoCoMo's retention, scored selection **loses to FIFO by 21 answer points**
+   where LoCoMo gives +8.67. The cause is a **scorer transfer failure**, not the
+   mechanism: `HeuristicScorer`'s separation between evidence and non-evidence
+   turns reverses sign between the corpora (+0.0476 → −0.0346), because it was
+   written for LoCoMo's 32-token dialogue lines and LongMemEval's turns are
+   210-token prose. Two caveats before quoting any of it — the §30.4 recency
+   confound (`split[0]=0`) is unfixed, and **strict recall is uninterpretable
+   here for compressing arms** (§30.6). Answer recall is unaffected.
+7. **Online learning of the eviction policy** — built (`run_online.py`), but
+   pilot-scale at two conversations (n=230).
+8. **A scorer that transfers across corpora** — what item 6 turned into, and now
+   the project's most interesting open question.

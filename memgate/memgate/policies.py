@@ -305,7 +305,8 @@ class MemGatePolicy:
                  fill_store: str = "long",
                  write_mode: str = "threshold",
                  retrieve_working: bool = None,
-                 cost_mode: str = "tokens", vector_bytes: int = 1536, **kw):
+                 cost_mode: str = "tokens", vector_bytes: int = 1536,
+                 summariser=None, **kw):
         # Size the working tier from the token budget rather than pinning it at
         # a constant. A fixed 400-token Tier 2 meant MemGate could not fill a
         # 4096-token budget however well it scored (it used 1336), so the
@@ -342,7 +343,9 @@ class MemGatePolicy:
                                     demote_on_pressure=demote_on_pressure,
                                     scored_eviction=scored_eviction,
                                     cost_mode=cost_mode,
-                                    vector_bytes=vector_bytes)
+                                    vector_bytes=vector_bytes,
+                                    summariser=summariser)
+        self.summariser = summariser
         self.informative_compress = informative_compress
         self.pack_by_density = pack_by_density
         self.use_retrieval = use_retrieval
@@ -451,9 +454,14 @@ class MemGatePolicy:
         that are actually the answers. See compress.py.
         `informative_compress=False` restores head-truncation as the ablation.
 
-        SWAP-IN (Phase 2): base-LLM abstractive summarisation, which must beat
-        this extractive baseline to earn its cost.
+        SWAP-IN: `summariser` replaces this with base-LLM abstractive
+        re-summarisation (abstractive.py), which must beat this extractive
+        baseline to earn its cost. The store's `_gist` takes the same injection,
+        so threshold mode and adaptive mode compress the same way and the
+        comparison is one component rather than a mixture of two.
         """
+        if self.summariser is not None:
+            return self.summariser(text, max_words)
         if not self.informative_compress:
             w = text.split()
             return text if len(w) <= max_words else " ".join(w[:max_words]) + " ..."

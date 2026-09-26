@@ -67,15 +67,14 @@ generation, rate--distortion, empirical evaluation
 \section{Introduction}
 %% ======================================================================
 
-A conversational agent that runs for weeks builds up a history far larger than
-any context window, so some component must decide what goes into the prompt on
-each turn. Simply using a longer window does not remove the problem. Accuracy
-has been shown to fall by 30--50\% well before the documented context limit
-across a range of frontier models \cite{chroma2025contextrot}, and the position
-of information inside a long context changes how much of it the model actually
-uses \cite{liu2024lostmiddle}. These are properties of attention over long
-inputs rather than gaps in training, so a larger window moves the difficulty
-instead of solving it. The limiting factor is curation rather than capacity.
+An agent that runs for weeks accumulates a history far larger than any context
+window, so something must decide what enters the prompt each turn. A longer
+window does not remove the problem: accuracy falls 30--50\% well before the
+documented limit across frontier models \cite{chroma2025contextrot}, and
+position inside a long context changes how much the model uses
+\cite{liu2024lostmiddle}. These are properties of attention over long inputs,
+not gaps in training, so a larger window moves the difficulty rather than
+solving it. The limiting factor is curation, not capacity.
 
 The cost of poor curation can be measured. On LongMemEval, oracle retrieval
 scores about 92\% where the same model retrieving for itself scores about 58\%
@@ -97,93 +96,62 @@ framework rather than a measured system.
 
 This paper measures the decision. Our research question is: how much of the
 memory-selection gap can a better decision policy recover, and under what
-budget does compression become worthwhile? The contributions are as follows.
+budget does compression become worthwhile?
 
-\begin{enumerate}
-\item A storage-budgeted evaluation protocol that corrects an accounting error
-common in this area. Bounding only the assembled context charges a
-store-everything baseline nothing for retention, so forgetting can only lose
-information and the comparison is settled before it is run
-(Section~\ref{sec:accounting}).
-
-\item Evidence that the gain comes from selection rather than compression. At
-identical storage, fidelity and retrieval, scored forgetting is worth $+8.67$
-answer-recall points over FIFO, while compressing an evicted turn loses $6.71$
-points (Sections~\ref{sec:selection} and~\ref{sec:significance}).
-
-\item A test of the rate--distortion crossover at which compression should
-begin to pay, carried out to a compression ratio of $182\times$
-(Section~\ref{sec:scaling}).
-
-\item Byte-denominated accounting, which shows that the embedding index
-outweighs the text it indexes by about $12\times$ and reverses the ranking of
-policies below roughly 40\,KiB (Section~\ref{sec:bytes}).
-
-\item A negative result for LLM-judged salience. As a single-component swap, a
-0.5B instruction-tuned judge performs worse than a hand-written heuristic by
-$5.87$ points (Section~\ref{sec:scorer}).
-
-\item An end-task evaluation through a fixed reader, which measures how much of
-the recall advantage is converted into correct answers rather than assumed
-(Section~\ref{sec:endtask}).
-
-\item Three measurement errors that affected our own results, with the checks
-that detected them (Section~\ref{sec:threats}).
-\end{enumerate}
+Our contributions are as follows. (1)~A storage-budgeted protocol correcting
+an accounting error common in this area: bounding only the assembled context
+charges a store-everything baseline nothing for retention, settling the
+comparison before it is run (Section~\ref{sec:accounting}). (2)~Evidence that
+the gain is selection, not compression --- at identical storage, fidelity and
+retrieval, scored forgetting is worth $+8.67$ answer-recall points over FIFO
+while compressing an evicted turn loses $6.71$ (Sections~\ref{sec:selection}
+and~\ref{sec:significance}). (3)~A test of the rate--distortion crossover, to
+$182\times$ compression (Section~\ref{sec:scaling}). (4)~Byte-denominated
+accounting: the embedding index outweighs the text it indexes by about
+$12\times$ and reverses the policy ranking below roughly 40\,KiB
+(Section~\ref{sec:bytes}). (5)~A negative result for LLM-judged salience --- as
+a single-component swap, a 0.5B judge loses to a hand-written heuristic by
+$5.87$ points (Section~\ref{sec:scorer}). (6)~An end-task evaluation through a
+fixed reader, measuring how much of the recall advantage becomes correct
+answers (Section~\ref{sec:endtask}). (7)~Three measurement errors in our own
+results, with the checks that caught them (Section~\ref{sec:threats}).
 
 Four of these seven results are negative or corrective. We consider this a useful
 outcome. Described only as a three-tier memory layer, the system would
 duplicate work that has already been done; measured against controls, it
 indicates which parts of that design actually pay for themselves.
 
-The rest of this paper is organised as follows. Section~\ref{sec:related}
-reviews related work. Section~\ref{sec:harness} describes the harness and the
-policies it compares, and Section~\ref{sec:metrics} defines the two metrics we
-report. Section~\ref{sec:setup} gives the experimental setup and
-Section~\ref{sec:results} the results. Section~\ref{sec:threats} discusses
-threats to validity, and Sections~\ref{sec:limitations}
-and~\ref{sec:conclusion} give limitations and conclusions.
-
 %% ======================================================================
 \section{Related Work}
 \label{sec:related}
 %% ======================================================================
 
-\subsection{Tiered agent memory}
-MemGPT \cite{packer2023memgpt} uses an operating-system analogy in which a
-virtual context is paged against external storage under the model's own
-control. MemoryBank \cite{zhong2024memorybank} adds a forgetting curve derived
-from the Ebbinghaus model. Generative Agents \cite{park2023generative} score
-memories by recency, importance and relevance before retrieval, and A-MEM
-\cite{xu2025amem} organises memories as interlinked notes. This work shows that
-tiering and forgetting are practical. Because these systems are evaluated end
-to end, however, the contribution of any single decision inside them, such as
-what to retain and at what fidelity, cannot be separated from the rest of the
-pipeline. Our harness is designed to make that separation possible.
+MemGPT \cite{packer2023memgpt} pages a virtual context against external storage
+under the model's own control; MemoryBank \cite{zhong2024memorybank} adds an
+Ebbinghaus forgetting curve; Generative Agents \cite{park2023generative} score
+memories by recency, importance and relevance; A-MEM \cite{xu2025amem}
+organises them as interlinked notes. This work shows tiering and forgetting are
+practical, but because these systems are evaluated end to end, the contribution
+of any single decision inside them cannot be separated from the pipeline. Our
+harness is built to make that separation possible.
 
-\subsection{Context and cache compression}
-A related line of work compresses the prompt or the attention cache instead of
-choosing between stored items. LLMLingua \cite{jiang2023llmlingua} prunes
-tokens using a perplexity criterion. Gist tokens \cite{mu2023gist} and
-AutoCompressors \cite{chevalier2023autocompressor} learn dense summary
-representations. StreamingLLM \cite{xiao2024streaming} and
-H\textsubscript{2}O \cite{zhang2023h2o} evict entries from the KV cache using
-attention-derived scores. All of these operate within a single forward pass
-over a contiguous context. The decision studied here is upstream of that and
-persistent: it determines which items survive in a store across sessions, where
-an evicted item cannot be recovered from the cache at all.
+A second line compresses the prompt or the attention cache rather than choosing
+between stored items: LLMLingua \cite{jiang2023llmlingua} prunes tokens by
+perplexity, Gist tokens \cite{mu2023gist} and AutoCompressors
+\cite{chevalier2023autocompressor} learn dense summaries, and StreamingLLM
+\cite{xiao2024streaming} and H\textsubscript{2}O \cite{zhang2023h2o} evict from
+the KV cache by attention-derived scores. All operate within a single forward
+pass over a contiguous context. The decision studied here is upstream and
+persistent: it fixes which items survive across sessions, where an evicted item
+cannot be recovered from the cache at all.
 
-\subsection{Benchmarks}
-LoCoMo \cite{maharana2024locomo} provides multi-session dialogues annotated
-with gold evidence turn identifiers, which is what allows a retrieval-level
-metric to be computed without running a generative model. LongMemEval
+LoCoMo \cite{maharana2024locomo} supplies multi-session dialogues annotated
+with gold evidence turn identifiers, which is what lets a retrieval-level
+metric be computed without a generative model; LongMemEval
 \cite{wu2024longmemeval} isolates several memory abilities and is the source of
-the oracle-versus-interactive gap quoted above.
-
-\subsection{Position of this work}
-We propose neither a new architecture nor a new benchmark. The contribution is
-a measurement protocol and the results obtained with it, including a case where
-correcting the protocol reverses the conclusion.
+the gap quoted above. We propose neither a new architecture nor a new
+benchmark: the contribution is a measurement protocol and its results,
+including a case where correcting the protocol reverses the conclusion.
 
 %% ======================================================================
 \section{The MemGate Harness}
@@ -214,34 +182,12 @@ decision point separable, since it gives a single site in the pipeline that a
 controlled swap can target.
 
 \subsection{Policies}
-Table~\ref{tab:policies} lists the arms. Two require comment. RAG is the
+The arms are P0 (sliding window, recency, verbatim), RAG (store-all, FIFO, verbatim), P1 (threshold, scored at ingest), P1-A (adaptive: score orders eviction, compress), P1-S (select: score orders eviction, drop), P2 (0.5B judge), P3 (learned, cross-validated) and an oracle. Two require comment. RAG is the
 no-policy control: it stores everything, retrieves the top $k$ items, and
 evicts FIFO when the store is full. It is not a weak baseline but the arm that
 a decision policy has to beat in order to have contributed anything. P0 is
 given the same token budget as MemGate, so the only difference between them is
 which turns are selected, not how many tokens may be spent.
-
-\begin{table}[t]
-\caption{Policies compared. P1-A and P1-S differ only in what happens to an
-evicted item.}
-\label{tab:policies}
-\centering
-\small
-\begin{tabular}{@{}llll@{}}
-\toprule
-& Policy & Retention rule & Fidelity \\
-\midrule
-P0     & Sliding window   & recency                & verbatim \\
-RAG    & Store-all        & FIFO (\emph{control})  & verbatim \\
-P1     & Threshold        & scored at ingest       & compressed \\
-P1-A   & Adaptive         & score orders eviction  & \textbf{compress} \\
-P1-S   & Select           & score orders eviction  & \textbf{drop} \\
-P2     & LLM-judged       & 0.5B model scores turn & drop \\
-P3     & Learned          & fitted, cross-validated& drop \\
-Oracle & ---              & perfect selection      & verbatim \\
-\bottomrule
-\end{tabular}
-\end{table}
 
 \subsection{One variable per comparison}
 The experimental design lies in the set of contrasts rather than in the set of
@@ -277,59 +223,44 @@ the assembled context. Answer recall is the fraction for which the answer text
 survived into the context, computed over the 715 of 1{,}527 questions whose
 answer is literally recoverable from the evidence turns.
 
-The distinction matters for this study. Evidence recall credits an identifier:
-a compressed gist retains the evidence identifier of a turn whose text it has
-discarded, and so records a hit with none of the answer behind it. During
-development we observed evidence recall rise from 8.1\% to 14.8\% while answer
-recall remained at 12.8\%, so the apparent gain was entirely an artefact of
-identifier bookkeeping. Since the comparison studied here, dropping against
-compressing, is the comparison on which the two metrics diverge, reporting only
-evidence recall would have produced the opposite conclusion. We therefore treat
-answer recall as the primary metric and report evidence recall alongside it so
-that the divergence remains visible.
+The distinction is load-bearing. Evidence recall credits an identifier: a
+compressed gist retains the identifier of a turn whose text it discarded, and
+records a hit with none of the answer behind it. In development we saw evidence
+recall rise from 8.1\% to 14.8\% while answer recall stayed at 12.8\% --- the
+gain was entirely identifier bookkeeping. Dropping against compressing is
+precisely the comparison on which the two diverge, so reporting evidence recall
+alone would have produced the opposite conclusion. We treat answer recall as
+primary and report evidence recall alongside it to keep the divergence visible.
 
-Both metrics are forms of context recall: they measure whether the memory
-policy placed the required evidence in front of the model. This is an upper
-bound on end-task accuracy rather than accuracy itself, which we return to in
-Section~\ref{sec:limitations}. Its advantage for the present study is that it
-is deterministic and does not confound the memory policy with the reader's
-reasoning ability.
+Both are forms of context recall, an upper bound on end-task accuracy rather
+than accuracy itself. Their advantage here is that they are deterministic and
+do not confound the memory policy with the reader's reasoning.
 
 %% ======================================================================
 \section{Experimental Setup}
 \label{sec:setup}
 %% ======================================================================
 
-\subsection{Benchmark}
-We use LoCoMo \cite{maharana2024locomo}, which contains 10 multi-session
-conversations, 5{,}882 turns and 1{,}527 scoreable questions. Category-5
-(adversarial) items are excluded. Those items carry evidence, but the correct
-behaviour is for the agent to decline to answer, so retrieving their evidence
-would not constitute success.
+We use LoCoMo \cite{maharana2024locomo}: 10 multi-session conversations, 5{,}882
+turns, 1{,}527 scoreable questions. Category-5 (adversarial) items are
+excluded --- they carry evidence, but the correct behaviour is to decline, so
+retrieving it would not be success.
 
-\subsection{Components}
 Retrieval and semantic supersession use all-MiniLM-L6-v2
-\cite{reimers2019sbert} with 384 dimensions. Token budgets are counted with the
-\texttt{cl100k\_base} tokenizer, so a budget is an exact token count rather
-than a word-count approximation. The P2 judge is Qwen2.5-0.5B-Instruct
-\cite{qwen2025}, run locally. Salience is read as a continuous expectation over
-digit-token logits at a single forward pass, instead of generating a digit and
-parsing it. This is faster, cannot produce an output that fails to parse, and gives a
-continuous score, so the eviction ranking contains no ties.
+\cite{reimers2019sbert} at 384 dimensions, and budgets are counted with
+\texttt{cl100k\_base}, so a budget is an exact token count. The P2 judge is
+Qwen2.5-0.5B-Instruct \cite{qwen2025}, run locally; salience is read as a
+continuous expectation over digit-token logits in one forward pass rather than
+generated and parsed, which is faster, cannot fail to parse, and leaves no ties
+in the eviction ranking.
 
-\subsection{Statistical procedure}
-All intervals are paired bootstrap intervals \cite{efron1993bootstrap} with
-$B=10{,}000$ resamples drawn at the conversation level rather than the question
-level, reported together with an exact McNemar test \cite{mcnemar1947}. The
-choice of resampling unit is not a detail: 1{,}527 questions drawn from 10
-conversations are not 1{,}527 independent trials, and one of our own earlier
-claims does not survive the correction (Section~\ref{sec:significance}).
-
-\subsection{Reproducibility}
-Every model is a pinned local copy and the model hub is disabled when the
-package is imported, since a run that can silently download a model is a run
-whose inputs are not pinned. All numeric tables in this paper are generated
-directly from the committed result files rather than transcribed.
+All intervals are paired bootstrap \cite{efron1993bootstrap} with $B=10{,}000$
+resamples drawn at the conversation level, with an exact McNemar test
+\cite{mcnemar1947}. The resampling unit is not a detail: 1{,}527 questions from
+10 conversations are not 1{,}527 independent trials, and one of our own claims
+does not survive the correction (Section~\ref{sec:significance}). Every model
+is a pinned local copy with the hub disabled at import, and all numeric tables
+are generated from the committed result files rather than transcribed.
 
 %% ======================================================================
 \section{Results}
@@ -348,21 +279,11 @@ machinery as a net loss against simply keeping everything and retrieving, and
 that result was correct given how the cost was being counted.
 
 Imposing a storage budget $S$ changes the question from what fits in the
-context to what is worth keeping at all. Fig.~\ref{fig:frontier} sweeps $S$
+context to what is worth keeping at all. Table~\ref{tab:storage} sweeps $S$
 with the context budget fixed at 2048 tokens. The ranking under the corrected
 accounting differs from the ranking under the original one. This is the most
 consequential observation in the paper, because an evaluation protocol that
 omits a cost answers a different question from the one it appears to ask.
-
-\begin{figure*}[t]
-\centering
-\includegraphics[width=\textwidth]{figures/fig1_storage_frontier.pdf}
-\caption{The storage-budget frontier. The context budget is fixed at 2048
-tokens and the store is swept. Left: evidence recall. Right: answer recall.
-Under evidence recall the compressing policy P1-A appears to lead. Under answer
-recall, which checks content rather than identifiers, it does not.}
-\label{fig:frontier}
-\end{figure*}
 
 \subsection{Selection pays; compression does not}
 \label{sec:selection}
@@ -417,28 +338,20 @@ McNemar, at $S=4096$. The second row is the claim we decline to make.}
 \subsection{The rate--distortion crossover is not reached}
 \label{sec:scaling}
 
-Rate--distortion reasoning predicts that compression must eventually beat
-selection, since a sufficiently compressed record of everything should
-outperform a faithful record of a subset \cite{colaco2026rd}. Sweeping $S$
-downward cannot test this prediction, because all policies reach the floor
-before any crossover can appear: at $S=256$ every policy sits near 0.2\%
-evidence recall.
+Rate--distortion reasoning predicts compression must eventually beat selection,
+since a sufficiently compressed record of everything should outperform a
+faithful record of a subset \cite{colaco2026rd}. Sweeping $S$ downward cannot
+test this: every policy hits the floor first, near 0.2\% evidence recall at
+$S=256$. The missing axis is length, so we concatenate up to ten LoCoMo
+conversations --- 186K tokens --- holding $S$ fixed, which raises the
+compression ratio to $182\times$. Table~\ref{tab:scaling} reports no crossover:
+the margin of selection over compression does not close, and the best operating
+point stays at the vertex, a subset at full fidelity.
 
-The axis that is missing is conversation length. We therefore concatenate up to
-ten LoCoMo conversations, giving 186K tokens, and hold $S$ fixed, which raises
-the compression ratio to $182\times$. Table~\ref{tab:scaling} and
-Fig.~\ref{fig:scaling} report the outcome. No crossover occurs, and the margin
-of selection over compression does not close. At this scale the best operating
-point is at the vertex of the trade-off, where a subset held at full fidelity
-outperforms everything held at reduced fidelity.
-
-One caveat applies. A concatenated stream is not a natural long conversation.
-Each question concerns one of the constituent conversations, so the others act
-as distractors. The experiment is therefore a stress test of retention under
-pressure, which is the variable under study, rather than a long-dialogue
-benchmark. The negative result is correspondingly bounded: we falsify the
-crossover on this axis and up to this ratio, and do not claim that it cannot
-occur elsewhere.
+One caveat. A concatenated stream is not a natural long conversation --- each
+question concerns one constituent and the others act as distractors --- so this
+is a stress test of retention rather than a long-dialogue benchmark. We falsify
+the crossover on this axis to this ratio, and claim nothing beyond.
 
 \begin{table}[t]
 \caption{Answer recall against compression ratio at $S=2048$. The rightmost
@@ -448,15 +361,6 @@ column is the margin of dropping over compressing.}
 \small
 \input{tables/scaling}
 \end{table}
-
-\begin{figure}[t]
-\centering
-\includegraphics[width=\columnwidth]{figures/fig2_scaling.pdf}
-\caption{Compression ratio against answer recall. Theory predicts that the
-compressing policy overtakes the selecting one as the ratio grows. Up to
-$182\times$ it does not.}
-\label{fig:scaling}
-\end{figure}
 
 \subsection{The embedding index is not free}
 \label{sec:bytes}
@@ -486,14 +390,6 @@ therefore flat.}
 \input{tables/cost}
 \end{table}
 
-\begin{figure}[t]
-\centering
-\includegraphics[width=\columnwidth]{figures/fig4_cost_model.pdf}
-\caption{Byte-denominated budget. The crossing at the left of the plot is a
-policy with no index overtaking every retrieval-based method.}
-\label{fig:cost}
-\end{figure}
-
 \subsection{Scorer analysis}
 \label{sec:scorer}
 
@@ -513,40 +409,24 @@ system. $\dagger$: the row on which the two metrics disagree in direction.}
 \input{tables/ablation}
 \end{table}
 
-Table~\ref{tab:scorers} varies only the scorer, with the policy, storage
-budget, retrieval and compression fixed at the configuration of
-Section~\ref{sec:selection}, so any change can be attributed to the scorer.
-Three observations follow, all significant under clustering.
-
-First, scoring is worth doing at all. The hand-written heuristic gains $+11.19$
-answer points over unscored recency. This row establishes that the decision
-point is where value can be added, without which the rest of the table would
-not be informative.
-
-Second, the LLM judge still performs worse. Qwen2.5-0.5B-Instruct reaches
-30.9\% against the heuristic's 36.8\%, a difference of $-5.87$ points with the
-interval excluding zero, at roughly fifteen minutes of GPU time per corpus
-against microseconds for a regular expression. This is a negative result rather
-than an inconclusive one.
-
-Third, the headroom is real. A logistic scorer fitted under
-leave-one-conversation-out, so that the model scoring a conversation never saw
-it during training, reaches 48.3\%, which is $+11.47$ over the heuristic. The
-judge was therefore not limited by a ceiling that does not exist.
+Table~\ref{tab:scorers} varies only the scorer, everything else fixed at the
+configuration of Section~\ref{sec:selection}. Three results follow, all
+significant under clustering. Scoring is worth doing: the hand-written
+heuristic gains $+11.19$ answer points over unscored recency. The LLM judge
+nonetheless loses: Qwen2.5-0.5B-Instruct reaches 30.9\% against the
+heuristic's 36.8\%, $-5.87$ points with the interval excluding zero, at some
+fifteen minutes of GPU time per corpus against microseconds for a regular
+expression. And the headroom is real: a logistic scorer fitted under
+leave-one-conversation-out reaches 48.3\%, $+11.47$ over the heuristic, so the
+judge was not limited by a ceiling that does not exist.
 
 We attribute the judge's failure to what it is shown. It rates each turn in
 isolation, and salience is not a property of a turn considered alone: a phone
-number is important because a later turn asks for it. The fitted scorer sees
-the same isolated text and performs better because it was fitted to which turns
-were in fact cited, which lets it absorb corpus-level base rates that a
-per-turn prompt cannot convey. Consistent with this, the strongest single
-feature recovered by the fitted model is turn length, ahead of every
-hand-designed cue, which is a corpus-level regularity rather than a semantic
-one.
-
-The fitted scorer is an upper bound and not a deployable component, since a
-live agent has no future questions to fit against. Its purpose here is to
-bracket what a learned decision policy could achieve.
+number matters because a later turn asks for it. The fitted scorer sees the
+same isolated text but absorbs corpus-level base rates a per-turn prompt cannot
+convey --- its strongest single feature is turn length, ahead of every
+hand-designed cue. It is an upper bound rather than a deployable component,
+since a live agent has no future questions to fit against.
 
 \begin{table}[t]
 \caption{Single-component scorer swap at $S=4096$ with context 2048. Policy,
@@ -555,16 +435,8 @@ bound rather than a deployable component.}
 \label{tab:scorers}
 \centering
 \small
-\input{tables/scorers}
+\resizebox{\columnwidth}{!}{\input{tables/scorers}}
 \end{table}
-
-\begin{figure}[t]
-\centering
-\includegraphics[width=\columnwidth]{figures/fig3_scorer.pdf}
-\caption{Scorer comparison. The LLM judge P2 does not reach the heuristic P1,
-while the fitted bound P3 shows that headroom is available.}
-\label{fig:scorer}
-\end{figure}
 
 \subsection{End-task accuracy}
 \label{sec:endtask}
@@ -604,7 +476,7 @@ for the arms that never place one.}
 \label{tab:endtask}
 \centering
 \small
-\input{tables/endtask}
+\resizebox{\columnwidth}{!}{\input{tables/endtask}}
 \end{table}
 
 \begin{figure}[t]
@@ -620,60 +492,44 @@ oracle ceiling. The ordering matches the recall ordering, at a lower level.}
 \label{sec:threats}
 %% ======================================================================
 
-Three errors changed our results before we detected them. Each was found by an
-invariant rather than by reading the code, and we report them because we
-believe they apply to other evaluations of agent memory.
+Three errors changed our results before we detected them. Each was caught by an
+invariant rather than by reading the code.
 
-\subsection{A policy that reads its evaluation label}
-LoCoMo supplies a \texttt{fact\_id} for each evidence turn. An early
-consolidation rule promoted items using that field, so the policy was
-consulting the answer key when deciding what to keep. The effect was worth 45
-to 47 recall points and invalidated our first reported result. The remedy is an
-invariant rather than a coding convention: when every evaluation label is
-stripped from the input, the resulting store must be bit-identical. Each
-decision point added since, including eviction under a storage budget and
-demotion, was placed under that invariant before any number derived from it was
-reported.
+\emph{A policy that read its evaluation label.} LoCoMo supplies a
+\texttt{fact\_id} per evidence turn, and an early consolidation rule promoted
+items using it --- the policy was consulting the answer key. The effect was
+worth 45 to 47 recall points and invalidated our first reported result. The
+remedy is an invariant, not a convention: strip every evaluation label from the
+input and the resulting store must be bit-identical. Each decision point added
+since was placed under it before any number was reported.
 
-\subsection{Measured component value depends on the current bottleneck}
-We initially measured the sentence embedder as worth $+0.2$ points and
-concluded that it barely mattered. That was true in the regime measured, where
-retrieval was saturated against a write path that discarded 93\% of the
-conversation. After that bottleneck was removed, the same substitution was
-worth $+19.7$ points. An ablation run against a bottlenecked pipeline will
-systematically undervalue the components that would matter once the bottleneck
-moves, which argues for repeating ablations after any change to the dominant
-term rather than treating them as settled.
+\emph{Component value depends on the current bottleneck.} We first measured the
+sentence embedder at $+0.2$ points and concluded it barely mattered. That held
+only in the regime measured, where retrieval was saturated against a write path
+discarding 93\% of the conversation; once that bottleneck was removed the same
+substitution was worth $+19.7$. Ablations run against a bottlenecked pipeline
+systematically undervalue whatever would matter after the dominant term moves.
 
-\subsection{A metric that credits identifiers}
-This was discussed in Section~\ref{sec:metrics} and is listed again here
-because it is a threat to validity and not only a definitional choice. An
-identifier-level metric applied to a system that can store identifiers without
-their content measures the system's bookkeeping rather than its memory.
-
-A fourth and narrower case is worth recording. Batched judge scoring returned
-\texttt{NaN} for the short turns specifically. The natural hypothesis is
-numerical precision, and moving to \texttt{float32} did not resolve it. The
-cause was left-padding, which produces fully masked attention rows. Without an
-explicit \texttt{NaN} guard, every filler turn would have scored \texttt{NaN}
-and inverted the eviction order, and the failure would not have been visible in
-the aggregate metrics.
+\emph{A failure invisible in the aggregate.} Batched judge scoring returned
+\texttt{NaN} for short turns specifically. Precision was the natural hypothesis
+and \texttt{float32} did not help; the cause was left-padding, producing fully
+masked attention rows. Without an explicit guard every filler turn would have
+scored \texttt{NaN} and inverted the eviction order.
 
 %% ======================================================================
 \section{Limitations}
 \label{sec:limitations}
 %% ======================================================================
 
-\emph{Ten conversations.} Clustering by conversation is the correct unit of
-analysis and leaves few clusters, so the intervals are wide. We report them,
-and report the one effect that does not survive as not significant.
+\emph{Ten conversations.} Clustering by conversation is the correct unit and
+leaves few clusters, so intervals are wide; we report the one effect that does
+not survive as not significant.
 
-\emph{A single reader model.} The end-task evaluation of
-Section~\ref{sec:endtask} uses one 1.5B four-bit model decoding greedily. The
-ordering of policies is what we claim; the absolute accuracies are properties
-of that reader, and the oracle arm's 67.3\% shows that a substantial part of
-the remaining error is the reader rather than the memory layer. A larger reader
-would raise every arm and could compress or widen the margins between them.
+\emph{A single reader model.} Section~\ref{sec:endtask} uses one 1.5B four-bit
+model decoding greedily. We claim the ordering of policies, not the absolute
+accuracies: the oracle arm's 67.3\% shows much of the remaining error is the
+reader, and a larger one would raise every arm and could compress or widen the
+margins.
 
 \emph{Extractive compression only.} P1-A selects words and does not rewrite
 them. Our negative result for compression is stated for the extractive case,
@@ -681,6 +537,13 @@ and an abstractive summariser may retain more content per token.
 
 \emph{Concatenated streams are synthetic}, as discussed in
 Section~\ref{sec:scaling}.
+
+\emph{The scorer is tuned to this corpus.} On a 94-item LongMemEval
+\cite{wu2024longmemeval} subsample, whose turns average 210 tokens against
+LoCoMo's 32, the heuristic's separation between evidence and non-evidence turns
+reversed in sign and scored eviction lost to FIFO. Read the $+8.67$ of
+Section~\ref{sec:selection} as what a policy recovers \emph{given a scorer
+suited to the corpus}, not as a property of scored selection in general.
 
 \emph{Single embedder and single judge.} The negative result of
 Section~\ref{sec:scorer} is evidence about a 0.5B model prompted per turn, not
@@ -693,17 +556,17 @@ the finding.
 \label{sec:conclusion}
 %% ======================================================================
 
-Under the accounting normally used in this area, tiered compression is a net
-loss against storing everything and retrieving, but that result is an artefact
-of leaving the store unbounded. When the store is bounded, the decision of
-which items to forget is worth $+8.67$ answer-recall points at identical
-storage, fidelity and retrieval, while compressing an evicted item rather than
-dropping it loses $6.71$ points. The crossover at which compression should
-begin to pay is not reached on this benchmark up to a compression ratio of
-$182\times$. Charging the budget for the embedding index reverses the ranking
-of policies below about 40\,KiB. An LLM judge, which is the obvious route to a
-better scorer, performs worse than a regular expression, and the reason can be
-identified: salience is not a property of a turn considered in isolation.
+Under the accounting normally used here, tiered compression is a net loss
+against storing everything and retrieving --- but that is an artefact of leaving
+the store unbounded. Bound it, and the decision of which items to forget is
+worth $+8.67$ answer-recall points at identical storage, fidelity and
+retrieval, while compressing an evicted item rather than dropping it loses
+$6.71$. The crossover at which compression should begin to pay is not reached
+to $182\times$. Charging the budget for the embedding index reverses the
+ranking below about 40\,KiB. An LLM judge, the obvious route to a better
+scorer, loses to a regular expression, for an identifiable reason: salience is
+not a property of a turn in isolation. Through a fixed reader, $+6.0$ of those
+$+8.67$ points survive as correct answers.
 
 The practical recommendation is narrow. Retain a scored subset at full fidelity
 rather than compressing everything, and denominate the budget in bytes with the
@@ -712,16 +575,12 @@ results above changed in sign or in magnitude once a measurement error was
 removed, and none of those errors was visible in the aggregate numbers they
 affected.
 
-Measured through a fixed reader rather than at the retrieval level, $+6.0$ of
-those $+8.7$ points survive as correct answers, so the advantage is realised
-rather than merely available.
-
-Future work follows directly from the limitations. Abstractive compression would test whether
-the negative result is specific to extractive methods. A benchmark with
-genuinely long single conversations, such as LongMemEval, would replace the
-concatenated-stream stress test. Finally, learning the eviction policy online
-would remove the dependence on future questions that makes the fitted scorer an
-upper bound rather than a usable component.
+Future work follows from the limitations: abstractive compression, to test
+whether the negative result is specific to extractive methods; a scorer that
+transfers across corpora, which the LongMemEval result above makes the most
+urgent of the three; and learning the eviction policy online, which would
+remove the dependence on future questions that makes the fitted scorer an upper
+bound rather than a usable component.
 
 \section*{Acknowledgment}
 The authors thank the faculty of SVKM's NMIMS, Indore Campus, for their

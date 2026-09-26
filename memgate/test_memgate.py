@@ -235,6 +235,70 @@ for _mode in ("threshold", "adaptive"):
           == _tier_fingerprint(blind, store_budget=600, write_mode=_mode),
           "an eviction or demotion decision is reading fact_id/is_filler")
 
+
+# A summariser decides WHAT TEXT SURVIVES compression, which is a policy
+# decision of exactly the kind this section exists to constrain. Injected here
+# as a deterministic stub rather than the real LLM: the property under test is
+# label-blindness, not summary quality, and a stub keeps the suite offline,
+# fast and reproducible.
+def _stub_summariser(text, max_words):
+    return " ".join(text.split()[:max_words])
+
+
+for _mode in ("threshold", "adaptive"):
+    check(f"an injected summariser is label-blind ({_mode})",
+          _tier_fingerprint(turns, store_budget=600, write_mode=_mode,
+                            summariser=_stub_summariser)
+          == _tier_fingerprint(blind, store_budget=600, write_mode=_mode,
+                               summariser=_stub_summariser),
+          "the summariser path is reading fact_id/is_filler")
+
+# The abstractive experiment routed three call sites -- demotion under pressure
+# and both merge paths -- through ThreeTierStore._gist. With no summariser
+# injected that indirection must be BYTE-IDENTICAL to the extractive rule those
+# sites called directly, or every number from §23 onward moves silently and the
+# swap stops being a single-component comparison.
+from memgate.store import ThreeTierStore as _TTS
+from memgate.compress import informative_head as _ih
+
+_gist_samples = [t.text for t in turns[:20]] + [
+    "[Caroline] Hey Mel! Good to see you! My sister Priya moved to Pune in March."]
+check("the _gist hook is a no-op without a summariser",
+      all(_TTS()._gist(s, 8) == _ih(s, 8) for s in _gist_samples),
+      "routing compression through _gist changed the extractive output")
+check("head-truncation ablation still reachable through _gist",
+      all(_TTS(informative_compress=False)._gist(s, 8)
+          == " ".join(s.split()[:8]) for s in _gist_samples),
+      "the informative_compress=False ablation no longer head-truncates")
+
+# P4 learns DURING the run, so the scorer is state that evolves with the
+# conversation -- a new decision point, and one whose feedback arrives from item
+# text alone. Same invariant, and it matters more here than anywhere: a scorer
+# that could see labels would be learning the answer key rather than the user.
+from memgate.online import OnlineScorer as _OS
+
+check("online scorer is label-blind at inference",
+      _tier_fingerprint(turns, scorer=_OS(), store_budget=600,
+                        write_mode="adaptive")
+      == _tier_fingerprint(blind, scorer=_OS(), store_budget=600,
+                           write_mode="adaptive"),
+      "the online scorer path is reading fact_id/is_filler")
+
+_online = _OS()
+_before, _ = _online.score("We moved the bakery deadline to April 2.")
+_online.feedback(["[A] The deadline for the bakery app is April 2."],
+                 ["[B] ok", "[B] thanks", "[B] sounds good"])
+_after, _lab = _online.score("We moved the bakery deadline to April 2.")
+check("online feedback updates the scorer and stays bounded",
+      _online.stats()["updates"] > 0 and 0.0 <= _after <= 1.0
+      and isinstance(_lab, str),
+      "retrieval feedback did not update, or the utility left [0,1]")
+check("online scorer starts at the heuristic prior",
+      abs(_before - HeuristicScorer().score(
+          "We moved the bakery deadline to April 2.")[0]) < 1e-9,
+      "a cold online scorer must be exactly P1, or the warm-up is measured "
+      "as a regression")
+
 print("\n-- storage budget --")
 # §22.3: the experiment capped the CONTEXT but never the STORE, so "keep
 # everything and retrieve" was charged nothing for holding the whole

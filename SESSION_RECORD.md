@@ -3,6 +3,7 @@
 **Capstone Project** · SVKM's NMIMS, Indore Campus
 Simar Singh Khanuja & Yash Ramchandani
 Session 1: 12 August 2026 · Session 2: 17 August 2026 · Session 3: 24 August 2026 · Session 4: 27 August 2026
+Session 5: 17 September 2026 · Session 6: 25 September 2026
 
 A complete record of what was discussed, decided, built and found in these
 working sessions. Written so it can be picked up cold later.
@@ -60,6 +61,25 @@ working sessions. Written so it can be picked up cold later.
 >
 > No earlier number is withdrawn by this. The end-task pilot figures quoted
 > anywhere as "12 questions" are superseded by §29.3 — do not present them.
+>
+> ## ⚠ SESSION 6 — the §23 headline does not replicate, and we know why
+>
+> §30 ran LongMemEval. At storage matched to LoCoMo's retention, scored
+> selection **loses to FIFO by 21 answer points** where LoCoMo gives +8.67.
+>
+> The cause is not the mechanism. `HeuristicScorer`'s separation between
+> evidence and non-evidence turns **reverses sign** between the two corpora
+> (+0.0476 → −0.0346), so eviction discards evidence preferentially. It is a
+> scorer transfer failure — the heuristic was written for LoCoMo's 32-token
+> dialogue lines and LongMemEval's turns are 210-token prose.
+>
+> **The +8.67 claim still stands on LoCoMo** and no earlier number is
+> withdrawn. What changes is its scope: it is what a policy recovers *given a
+> scorer suited to the corpus*. The paper now carries that limitation.
+>
+> Two things must happen before any LongMemEval number is published: the
+> `split[0]=0` re-run of §30.4, and the missing S=32,768 point. And **never
+> quote LongMemEval strict recall for a compressing arm** (§30.6).
 
 ---
 
@@ -1605,3 +1625,225 @@ is scoped rather than blocking: abstractive compression, LongMemEval, online
 learning. **These are for the final review, not Review 2** — a rushed half-run
 of any of them would be worth less than the clean "scoped, with estimates" slide
 that already exists.
+
+---
+
+# Session 6 — 25/26 September 2026
+
+## 30. LongMemEval, and the scorer that does not transfer
+
+The three tracks §29.5 scoped for the final review were built on 21 September
+(abstractive, online, LongMemEval). This session ran LongMemEval, and the result
+is the most consequential of the project: **the §23 headline does not replicate,
+and the reason is the scorer rather than the mechanism.**
+
+### 30.1 The run
+
+94 items (6 dropped without evidence), 46,733 turns at 497 per item, 62
+answer-recoverable. MiniLM resolved properly — the §28.2 guard passed, so these
+are not hashing-baseline numbers mislabelled.
+
+Then a store-budget sweep, because LoCoMo and LongMemEval sit at very different
+compression pressures:
+
+```
+              turns  tok/turn  tok total   store/total @ S=4096
+LoCoMo          588      31.6     18,587        22.0%
+LongMemEval     497     209.6    104,191         3.9%
+```
+
+Turn *counts* are nearly identical; turn *lengths* differ 6.6x. S was swept to
+put LongMemEval at LoCoMo's retention (S=23,000 = 22.1%).
+
+```
+store   retention   P1-S select   RAG store-all     P1-S vs RAG (answer)
+ 4096       3.9%         14.5%            9.7%      +4.84  [ -3.23, +12.90] n.s.
+ 8192       7.9%         22.6%           14.5%      +8.06  [ -1.61, +17.74] n.s.
+16384      15.7%         21.0%           27.4%      -6.45  [-17.74,  +4.84] n.s.
+23000      22.1%         19.4%           40.3%     -20.97  [-33.87,  -8.06] SIG
+```
+
+LoCoMo's same contrast is **+8.67**. At matched retention LongMemEval gives
+**-20.97**. RAG scales as a cache must (9.7 → 40.3); P1-S peaks at 8,192 and
+then flattens or declines.
+
+S=32,768 was not reached — the OS killed the sweep for memory. The four budgets
+above are saved as `results/longmemeval_S{4096,8192,16384,23000}.csv`.
+
+### 30.2 Three wrong explanations, discarded in order
+
+Recorded because each was plausible and each was killed by a measurement, which
+is the only reason the fourth is trustworthy.
+
+**(a) "Multi-evidence questions cannot fit the context."** Wrong.
+100% of LongMemEval questions have gold evidence fitting in 2048 tokens —
+median 80 tokens, max 589, mean 1.8 evidence turns against LoCoMo's 1.5. The
+structural ceiling on strict recall is 100%, not 2.1%.
+
+**(b) "The read path is broken on long histories."** Wrong. Decomposing strict
+recall into *survival in the store* and *retrieval given survival*: retrieval is
+**100%** for both MemGate arms. Every gold turn that survives reaches the
+context. (A RAG row in the first decomposition read 0.0% — instrumentation, not
+measurement: `RAGPolicy` has no `.store`, it has `.items`.)
+
+**(c) "Selection genuinely fails under pressure."** Not as stated. The failure
+is localised to eviction: at S=23,000 P1-S retains gold evidence 25% of the time
+where plain FIFO retains 50%. Scored eviction is *discarding evidence that FIFO
+keeps*.
+
+### 30.3 What it actually is
+
+Scoring evidence and non-evidence turns directly with `HeuristicScorer`, no
+policies or stores involved:
+
+```
+                    evidence    non-evidence    separation
+LoCoMo                0.2484          0.2008       +0.0476
+LongMemEval           0.3727          0.4074       -0.0346
+```
+
+**The heuristic's discrimination reverses sign.** On LoCoMo it ranks evidence
+above average; on LongMemEval below, so `_forget_key` — `(utility,
+turn_index)`, lowest evicted first — evicts evidence preferentially. That is
+why scored eviction loses to no ranking at all.
+
+This is a **generalisation failure of the scorer, not a bug**. The heuristic was
+written against LoCoMo's short factual dialogue lines (31.6 tok/turn, dense in
+regex-catchable cues); LongMemEval turns are 209.6-token conversational prose.
+Consistent with §24.2, where the fitted scorer's strongest single feature is
+turn length — a corpus-level regularity, not a semantic one.
+
+Caveat on the percentile figures computed alongside these (50.3% / 45.5%): they
+are deflated by ties, since strict inequality was counted on a discrete utility
+distribution. The mean separation and its sign are the trustworthy part.
+
+### 30.4 A confound found on the way, worth fixing
+
+`MemGatePolicy.build_context` reserves a fixed 25% of the context for Tier 1
+recency (`split=(0.25, 0.25, 0.50)`) before retrieval gets a say; `RAGPolicy`
+spends the whole budget on retrieved items. So "P1-S vs RAG isolates which turns
+are forgotten" — as `run_longmemeval.py` and §23 both claim — is not strictly
+true: they also differ in guaranteed recency share.
+
+This is not new code and LoCoMo results stand with it, but its cost is far
+higher on LongMemEval: 512 tokens buys 2–3 turns there against ~16 on LoCoMo,
+and the target session is drawn from 38–62, so recent turns are almost never
+relevant. **The contrast should be re-run with `split[0]=0` before any
+LongMemEval number is published.**
+
+### 30.5 Statistical weight — read this before quoting anything above
+
+| evidence | n |
+|---|---|
+| the four-budget sweep | 94 items, **62** answer-recoverable |
+| survival decomposition | 8–20 items (so 25% = 2 of 8) |
+| the scorer separation | 62 evidence turns vs 29,989 non-evidence |
+
+The sweep is quotable with its intervals. **The decomposition numbers are not** —
+they are diagnostics that located a cause, not measurements of an effect.
+
+### 30.6 Strict recall is uninterpretable on LongMemEval
+
+P1-A adaptive reaches 54.3% strict against P1-S's 3.2%, but the survival check
+counted `fact_id` *and* `covered_ids`, and a gist carries those forward while
+discarding the text behind them. This is exactly what §19 built the
+answer-presence metric for. **Never quote LongMemEval strict recall for a
+compressing arm.** Answer recall is unaffected — it checks text — so the
+answer-column comparisons above stand.
+
+## 31. The paper: compiled for the first time, and cut to 6 pages
+
+### 31.1 Tectonic works; the README was wrong about why it didn't
+
+`paper/README.md` claimed the install was impossible because Homebrew could not
+reach `ghcr.io`. **False.** `ghcr.io` answers normally (401 to an
+unauthenticated `/v2/`, which is healthy). The link was simply slow — 6–40 KB/s
+— so the portable-Ruby fetch looked like a hang. `brew install tectonic`
+completed in ~50 minutes. Tectonic 0.17.0 is now installed and runs BibTeX and
+the rerun passes itself.
+
+**If it looks stuck, measure the `.incomplete` file in
+`~/Library/Caches/Homebrew/` before concluding anything.**
+
+### 31.2 check.py passed a paper with three visible layout defects
+
+The first actual compile found what a brace-counter cannot:
+
+```
+tab:scorers   54.7pt overfull  (~1.9cm into the gutter)
+tab:endtask   35.8pt overfull
+tab:policies  12.0pt overfull
+```
+
+Fixed by `\resizebox{\columnwidth}` on the two generated tables and tighter
+`\tabcolsep` on the hand-written one. `check.py` remains useful and remains
+**not a substitute for compiling**.
+
+### 31.3 8 pages → 6, and what the old cut list got wrong
+
+The prioritized cut list previously in `paper/README.md`, **applied in full,
+removed zero pages.** Text reflowed into every gap it opened.
+
+What moved the counter was vertical structure, not word count: removing the
+full-width `figure*` took 8→7, and converting the seven-item contributions
+`enumerate` into a paragraph took 7→6 — worth *seven words*, but a large amount
+of list leading.
+
+The useful diagnostic: compile with `\bibliography` stripped. Body alone was 6
+pages against 7 for the full document, which located the overflow in the
+19-entry bibliography and turned "cut two pages" into "free one column".
+
+Removed: four of five figures (`fig:cost` and `fig:scorer` had **no prose
+reference at all**; `fig:scaling` and `fig:frontier` duplicated tables that the
+cut list protects), `tab:policies`, the roadmap paragraph, and prose compression
+across Related Work, Metrics, Setup, Scorer analysis, Threats, Limitations,
+Conclusion and the crossover subsection. Only `fig:endtask` survives.
+
+Kept, as §29 required: `sec:accounting`, `tab:storage`, `tab:significance`,
+`sec:endtask`, `tab:endtask`, `fig:endtask`. Every result, number and interval
+is intact.
+
+Final: **6 pages, 4,170 words, 7 tables, 1 figure, 19/19 citations resolved, 0
+undefined references**, one 0.65pt overfull box (0.23mm). `main.pdf` committed.
+
+### 31.4 What §30 changed in the paper
+
+One limitation added, and it bounds the central claim:
+
+> *The scorer is tuned to this corpus.* On a 94-item LongMemEval subsample,
+> whose turns average 210 tokens against LoCoMo's 32, the heuristic's separation
+> between evidence and non-evidence turns reversed in sign and scored eviction
+> lost to FIFO. Read the $+8.67$ of Section~\ref{sec:selection} as what a policy
+> recovers *given a scorer suited to the corpus*, not as a property of scored
+> selection in general.
+
+Future work in the conclusion retargeted: **a scorer that transfers across
+corpora** is now the most urgent of the three, displacing the LongMemEval item
+that this session closed.
+
+No §30 table or figure entered the paper. n=62 on the answer metric, S=32,768
+missing, and the §30.4 confound unfixed — the standing rule that a pilot-scale
+run does not enter the paper applies to our own most interesting result.
+
+## 32. State
+
+* test suite **68 passed, 0 failed**
+* paper compiles locally, 6 pages, `main.pdf` committed
+* `memgate/data/longmemeval/` gitignored — `longmemeval_s_cleaned.json` is
+  265 MB, over GitHub's per-file limit on its own
+* abstractive still a **1-conversation** pilot (n=149, degenerate CIs — one
+  cluster, so `ci_lo == ci_hi == delta`; its `significant` column is an
+  artefact). Online still **2 conversations** (n=230).
+
+### Next, in order
+
+1. **Re-run the LongMemEval contrast with `split[0]=0`** (§30.4). Until that is
+   done, "selection loses at matched retention" is confounded.
+2. **Finish the sweep at S=32,768.** Run it alone; the OS killed it at 0.06 GB
+   free with the session's other work resident.
+3. **A scorer that transfers.** §30.3 makes this the project's live question,
+   and it is more interesting than the three tracks §29.5 listed.
+4. Abstractive and online to all ten conversations, or drop them from the paper's
+   future work honestly.
+5. The prose rewrite — abstract, introduction, threats, conclusion — is the
+   authors'. `paper/README.md` explains why and in what order.
