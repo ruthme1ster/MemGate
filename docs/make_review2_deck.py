@@ -58,7 +58,7 @@ SCORER = load("learned_scorer.csv", ("auc", "p1_answer", "p3_answer", "store_bud
 ABL = load("ablations_2048.csv", ("strict_recall", "delta_pts", "answer_recall"))
 ENDTASK = load("endtask.csv", ("n", "accuracy", "f1", "answer_recall"))
 LME = {}
-for _b in (4096, 8192, 16384, 23000):
+for _b in (4096, 8192, 16384, 23000, 32768):
     LME[_b] = load(f"longmemeval_S{_b}.csv",
                    ("delta", "ci_lo", "ci_hi", "answer_recall", "strict_recall"))
 LMESPLIT = load("longmemeval_split_S23000.csv",
@@ -766,7 +766,7 @@ top = head(sl, "We tested our own headline on a second benchmark — it failed",
            "LoCoMo is ten conversations. LongMemEval is 94 independent haystacks of "
            "38–62 sessions each. The claim should survive the move. It does not.")
 rows = [["Store budget", "Retention", "P1-S select", "RAG store-all", "Selection − FIFO"]]
-for _b in (4096, 8192, 16384, 23000):
+for _b in (4096, 8192, 16384, 23000, 32768):
     d = lme_at(_b, "P1-S select", "RAG store-all")
     lo, hi = lme_at(_b, "P1-S select", "RAG store-all", field="ci_lo"), \
              lme_at(_b, "P1-S select", "RAG store-all", field="ci_hi")
@@ -778,8 +778,9 @@ for _b in (4096, 8192, 16384, 23000):
 table(sl, rows, top, size=19, col_w=[3.0, 2.4, 3.0, 3.2, 5.0], height=3.6, width=16.6)
 bullets(sl, [
     ("At storage matched to LoCoMo's retention (22.1% vs 22.0%), selection loses to FIFO "
-     "by 21 answer points ", "— where LoCoMo gives +8.67. RAG scales as a cache must, 9.7% → "
-     "40.3%; P1-S peaks at 8,192 and then flattens."),
+     "by 21 answer points ", "— where LoCoMo gives +8.67, and the deficit is the same −20.97 "
+     "at the next budget up. Selection does benefit from storage; it benefits consistently "
+     "less than plain FIFO does."),
 ], top + 4.0, size=21)
 band(sl, [("The mechanism is not what failed. The scorer is.", ""),
           ("  HeuristicScorer's separation between evidence and non-evidence turns reverses "

@@ -332,6 +332,44 @@ places the remaining headroom in the reader rather than in the memory layer.
 
 ---
 
+### 3.10 Online learning reaches parity with the hand-written heuristic
+
+§3.6's fitted scorer is an upper bound: it is trained on which turns were in
+fact cited, which a live agent cannot know. P4 replaces that with a label-free
+runtime signal — it updates from retrieval feedback every 25 turns, using no
+future questions. Policy, budgets and retrieval are pinned at §3.3's
+configuration, so only the scorer varies.
+
+| Scorer | Evidence recall | Answer recall | vs heuristic (answer) |
+|---|---:|---:|---|
+| P0 recency (unscored) | 12.6% | 25.6% | −11.19 [−17.30, −6.21] significant |
+| P1 heuristic | 19.8% | 36.8% | — |
+| P4 online | 18.4% | 35.2% | **−1.54 [−4.63, +0.79] n.s.** |
+
+n = 1,527 questions / 715 answer-recoverable, clustered over ten conversations;
+1,233 updates at α = 0.76.
+
+**P4 matches the heuristic** — the interval straddles zero — while needing no
+hand-picked cues and no labels. It does not reach §3.6's fitted 48.3%, and the
+distance between them is the price of not having an oracle.
+
+The weights it learned are worth reporting, because they bear on §3.9:
+
+```
+ends_period  -0.529     is_question  +0.352
+n_words      -0.372     has_month    +0.202
+n_caps       -0.320     has_digit    -0.216
+```
+
+It learned to *disfavour* long turns and sentence-final punctuation. That is
+correct on LoCoMo, whose evidence turns are short factual lines. On
+LongMemEval, where every turn is ~210-token prose ending in a period, these same
+weights point the wrong way — so P4 is a candidate for fixing §3.9's transfer
+failure only if it is allowed to re-learn per corpus. Untested, and the obvious
+next experiment.
+
+---
+
 ### 3.9 The headline does not transfer to a second benchmark
 
 LoCoMo is ten conversations. A claim that holds only on the corpus its scorer
@@ -345,10 +383,13 @@ was swept to put LongMemEval at LoCoMo's retention (22.1% against 22.0%).
 | 8,192 | 7.9% | 22.6% | 14.5% | +8.06 [−1.61, +17.74] n.s. |
 | 16,384 | 15.7% | 21.0% | 27.4% | −6.45 [−17.74, +4.84] n.s. |
 | **23,000** | **22.1%** | **19.4%** | **40.3%** | **−20.97 [−33.87, −8.06] significant** |
+| **32,768** | **31.4%** | **30.6%** | **51.6%** | **−20.97 [−35.48, −6.45] significant** |
 
 **It does not replicate.** At matched retention selection *loses* to FIFO by
-20.97 answer points where LoCoMo gives +8.67. RAG scales as a cache must (9.7% →
-40.3%); P1-S peaks at 8,192 and then flattens.
+20.97 answer points where LoCoMo gives +8.67, and the deficit is the same −20.97
+at the next budget up. Both arms improve with storage — P1-S 14.5% → 30.6%, RAG
+9.7% → 51.6% — so selection is not failing to use the space. It is using it
+consistently less well than plain FIFO.
 
 **The cause is the scorer, not the mechanism.** Scoring evidence against
 non-evidence turns directly, with no policy or store involved:

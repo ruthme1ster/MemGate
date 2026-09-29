@@ -596,9 +596,10 @@ It does not replicate. Read the last row: at storage matched to LoCoMo's
 retention — 22.1% against 22.0% — **selection loses to FIFO by 21 answer
 points**, where LoCoMo gives +8.67. The interval excludes zero.
 
-Look at the two middle columns. RAG scales the way a cache must, 9.7% up to
-40.3% as you give it room. Ours peaks at 8,192 and then flattens. A policy that
-stops benefiting from storage is telling you something.
+Look at the two middle columns. Both arms improve as you give them room — ours
+14.5% up to 30.6%, RAG 9.7% up to 51.6% — so selection is not failing to use the
+storage. It is using it consistently less well than forgetting oldest-first. The
+deficit is the same 21 points at the top two budgets.
 
 Here is what it was telling us. The scorer's separation between evidence and
 non-evidence turns **reverses sign** between the two corpora: plus 0.048 on
@@ -771,6 +772,14 @@ Four things remain, with effort estimates attached."
 **Land.** Every limitation maps to a claim we deliberately didn't overstate.
 
 ---
+
+
+**If asked about the pilots.** "Two of the three are now closed. Online learning
+ran on all ten conversations and reaches parity with the hand-written heuristic
+— minus 1.5 answer points, interval straddling zero, with no labels and no future
+questions. The two-conversation pilot had reported a significant loss; that was
+an artifact of two clusters, and we say so. Abstractive is the one still at pilot
+scale."
 
 ### Slide 26 — Conclusion as it stands
 

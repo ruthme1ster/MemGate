@@ -1985,3 +1985,72 @@ which listed LongMemEval as not started.
 3. Abstractive to ten conversations (~4 h of generation), online to ten.
 4. The prose rewrite — abstract, introduction, threats, conclusion — is the
    authors'.
+
+## 37. Two of the three remaining gaps closed
+
+### 37.1 S=32,768 — the sweep completed, and a claim of ours corrected
+
+```
+   store  retention   P1-S select  RAG store-all   selection - FIFO (answer)
+    4,096      3.9%        14.5%           9.7%    +4.84 [ -3.23, +12.90]  n.s.
+    8,192      7.9%        22.6%          14.5%    +8.06 [ -1.61, +17.74]  n.s.
+   16,384     15.7%        21.0%          27.4%    -6.45 [-17.74,  +4.84]  n.s.
+   23,000     22.1%        19.4%          40.3%   -20.97 [-33.87,  -8.06]  significant
+   32,768     31.4%        30.6%          51.6%   -20.97 [-35.48,  -6.45]  significant
+```
+
+**§30 said P1-S "peaks at 8,192 and then flattens or declines". That was wrong**
+— read off four points when the fifth reverses it. P1-S recovers to 30.6%; the
+curve is 14.5 → 22.6 → 21.0 → 19.4 → 30.6, non-monotonic but rising. The dip at
+16k–23k was noise at n=62 and was over-read.
+
+What replaces it is stronger: **the deficit is −20.97 at both of the top two
+budgets, significant at both.** Selection is not failing to use storage. It uses
+storage consistently less well than forgetting oldest-first, once retention is
+realistic. The §30.3 diagnosis is untouched.
+
+Corrected in three places that carried the old claim: deck slide 18, its speaker
+notes, and `REPORT.md` §3.9.
+
+### 37.2 P4 online learning at full scale — the pilot was an artefact
+
+```
+  P0 recency     strict 12.6%   answer 25.6%
+  P1 heuristic   strict 19.8%   answer 36.8%
+  P4 online      strict 18.4%   answer 35.2%   1233 updates, alpha 0.76
+
+  P4 vs P1   answer   -1.54  [ -4.63,  +0.79]  n.s.
+  P0 vs P1   answer  -11.19  [-17.30,  -6.21]  significant
+```
+
+n = 1,527 / 715 answer-recoverable, ten clusters.
+
+The two-conversation pilot reported **-12.16, significant**. At full scale it is
+**-1.54, not significant**. P4 reaches parity with the hand-written heuristic
+using only retrieval feedback — no labels, no future questions. §32's warning
+that two clusters is "an interval in form only" is now demonstrated, not
+asserted.
+
+What it learned, which bears directly on §30.3:
+
+```
+ends_period  -0.529     is_question  +0.352
+n_words      -0.372     has_month    +0.202
+n_caps       -0.320     has_digit    -0.216
+```
+
+It learned to **disfavour long turns and sentence-final punctuation**. Correct on
+LoCoMo, whose evidence turns are short factual lines. On LongMemEval, where every
+turn is ~210-token prose ending in a period, those weights point the wrong way.
+So P4 addresses §30.3's transfer failure **only if allowed to re-learn per
+corpus** — which is the next experiment, not a result.
+
+`REPORT.md` §3.10. Note that P4's parity is with P1 on LoCoMo; it has not been
+run on LongMemEval.
+
+### 37.3 Gap 3 in flight
+
+`run_abstractive.py` across all ten conversations, ~3,700 generations against the
+373 its one-conversation pilot used. Running under `nohup` so it outlives the
+session's other work; log in the scratchpad. This closes the last of §29.5's
+three tracks.
