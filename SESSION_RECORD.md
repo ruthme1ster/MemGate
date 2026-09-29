@@ -1904,3 +1904,84 @@ diagnostic was killed twice, by scoring turns directly — no policy, no store,
 no embeddings. **When a diagnostic keeps dying, ask whether the question can be
 answered without replaying the haystack.** It usually can, and the cheaper
 measurement is often the more direct one.
+
+---
+
+# Session 7 — 29 September 2026
+
+## 34. The §30.4 confound, ruled out
+
+§30.4 flagged that `MemGatePolicy.build_context` reserves `split[0]`=25% of the
+context for Tier-1 recency before retrieval is consulted, while `RAGPolicy`
+reserves nothing — so "P1-S vs RAG isolates which turns are forgotten" was not
+strictly true. It was named as the first thing to fix before publishing any
+LongMemEval number.
+
+`run_lme_split.py` runs the identical comparison with the reservation removed.
+94 items, S=23,000 (LoCoMo-matched retention), everything else held:
+
+```
+  P1-S split .25   strict   3.2%   answer  19.4%
+  P1-S split 0     strict   2.1%   answer  19.4%
+  RAG store-all    strict  21.3%   answer  40.3%
+
+  P1-S split 0   vs P1-S split .25   answer   +0.00  [ +0.00,  +0.00]  n.s.
+  P1-S split 0   vs RAG store-all    answer  -20.97  [-33.87,  -8.06]  significant
+  P1-S split .25 vs RAG store-all    answer  -20.97  [-33.87,  -6.45]  significant
+```
+
+**The reservation is not load-bearing.** Removing it moves the answer metric by
+exactly zero — the two arms score identically on all 62 answer-recoverable
+questions. Selection loses to FIFO by 20.97 points either way.
+
+So §30.3 stands unqualified: the failure is the scorer's transfer, not the
+recency share and not the mechanism. Item 1 of §32's Next list is closed.
+
+Strict recall differs slightly between the two (3.2% vs 2.1%, i.e. 3 of 94
+against 2 of 94) — noise at that count, and §30.6 applies regardless.
+
+`results/longmemeval_split_S23000.csv`.
+
+## 35. Review 2 deck rebuilt
+
+`docs/make_review2_deck.py` → 30 slides (was 28). Numbers are read from the
+committed CSVs, as before; nothing is typed by hand.
+
+**Two new slides**, placed after end-task accuracy:
+
+* **18 — "We tested our own headline on a second benchmark — it failed."** The
+  four-budget sweep table with clustered intervals, the +8.67 → −20.97 reversal
+  at matched retention, and the scorer sign-flip (+0.0476 → −0.0346) as cause.
+* **19 — "The obvious alternative explanation, ruled out."** The recency
+  confound, why it should have mattered on LongMemEval specifically, and §34's
+  +0.00 result.
+
+**Updated:** the status slide (eleven experiments; LongMemEval and the paper
+marked complete; abstractive and online demoted to "Pilot only" with the reason);
+limitations (two added — the scorer is tuned to LoCoMo, and strict recall is
+uninterpretable there for compressing arms); remaining work (reordered — a
+scorer that transfers is now item 1); the conclusion (a sixth bullet for the
+non-replication); deliverables and repo layout (68 tests, ~6,500 lines, 17
+experiments, `paper/main.pdf`); and the timeline (end-task, LongMemEval and the
+compiled paper filled in).
+
+The deck now opens by conceding the headline does not transfer and closes on
+"the more useful result is what doesn't work — including, twice now, our own
+headline." That is a stronger Review 2 position than the September version,
+which listed LongMemEval as not started.
+
+## 36. State
+
+* test suite **68 passed, 0 failed**
+* paper: 6 pages, compiles, `paper/main.pdf` committed
+* deck: 30 slides, rebuilt from CSVs
+* §32 Next item 1 (the confound) **closed**; item 2 (S=32,768) still open
+
+### Next
+
+1. **S=32,768** — the last LongMemEval sweep point. ~20 min, must run alone.
+2. **A scorer that transfers.** The project's live question, and what the final
+   review should be about.
+3. Abstractive to ten conversations (~4 h of generation), online to ten.
+4. The prose rewrite — abstract, introduction, threats, conclusion — is the
+   authors'.

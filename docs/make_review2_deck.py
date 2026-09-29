@@ -55,6 +55,27 @@ JUDGE = load("judge_eval.csv", ("strict", "answer", "vs_p1", "ci_lo", "ci_hi"))
 SCORER = load("learned_scorer.csv", ("auc", "p1_answer", "p3_answer", "store_budget"))
 ABL = load("ablations_2048.csv", ("strict_recall", "delta_pts", "answer_recall"))
 ENDTASK = load("endtask.csv", ("n", "accuracy", "f1", "answer_recall"))
+LME = {}
+for _b in (4096, 8192, 16384, 23000):
+    LME[_b] = load(f"longmemeval_S{_b}.csv",
+                   ("delta", "ci_lo", "ci_hi", "answer_recall", "strict_recall"))
+LMESPLIT = load("longmemeval_split_S23000.csv",
+                ("delta", "ci_lo", "ci_hi", "answer_recall", "strict_recall"))
+
+
+def lme_at(budget, arm, vs, metric="answer", field="delta"):
+    """One contrast from the LongMemEval store-budget sweep."""
+    for r in LME[budget]:
+        if r["arm"] == arm and r["vs"] == vs and r["metric"] == metric:
+            return r[field]
+    raise KeyError((budget, arm, vs, metric))
+
+
+def lme_ar(budget, arm):
+    for r in LME[budget]:
+        if r["arm"] == arm:
+            return r["answer_recall"]
+    raise KeyError((budget, arm))
 
 
 def s_at(policy_prefix, budget, field="answer_recall"):
@@ -278,12 +299,12 @@ run(p, "Capstone Project  ·  Progress review, September 2026", size=24, color=M
 # =========================================================================
 sl = slide()
 top = head(sl, "Where the project stands",
-           "The measurement track is complete. Nine experiments run end to end; "
-           "every claim carries a clustered confidence interval.")
+           "Eleven experiments run end to end; every claim carries a clustered confidence "
+           "interval. The last of them put the headline itself to the test.")
 gap = s_at("P1-S", 4096) - s_at("RAG", 4096)
 table(sl, [
     ["Workstream", "State", "Evidence"],
-    ["Harness, three-tier store, policies P0 / P1", "*Complete*", "memgate/ — 5,430 lines of Python"],
+    ["Harness, three-tier store, policies P0 / P1", "*Complete*", "memgate/ — ~6,500 lines of Python"],
     ["LoCoMo wired; the evaluation leak removed", "*Complete*", "3 label-blindness regression tests"],
     ["Ablation study — 23 configurations", "*Complete*", "results/ablations_2048.csv"],
     ["Storage budget — the corrected accounting", "*Complete*", "35 configurations swept"],
@@ -291,12 +312,17 @@ table(sl, [
     ["Scaling to 182× · byte accounting · learned scorer", "*Complete*", "three separate sweeps"],
     ["P2 LLM judge — built and evaluated", "*Complete*", "single-component swap, with CIs"],
     ["End-task accuracy through a real reader", "*Complete*", "full 715-question run; results/endtask.csv"],
-    ["Abstractive compression · LongMemEval · online learning", "Not started", "scoped, with effort estimates"],
-], top, size=19, col_w=[8, 2.4, 7.8])
+    ["LongMemEval — the headline tested on a second benchmark", "*Complete*",
+     "94 haystacks; it does not replicate, and we know why"],
+    ["IEEE paper — compiled, cut to 6 pages", "*Complete*", "paper/main.pdf, 19/19 citations"],
+    ["Abstractive compression · online learning", "Pilot only",
+     "1 and 2 conversations — intervals not yet quotable"],
+], top, size=18, col_w=[8, 2.4, 7.8])
 band(sl, [("The headline:  "),
           ("+%.1f answer-recall points" % gap, " for choosing which turns to forget, over forgetting "
-           "oldest-first — at identical storage, fidelity and retrieval.")],
-     H - 1.85, height=1.15)
+           "oldest-first — at identical storage, fidelity and retrieval. On a second benchmark it "
+           "does not hold, and the cause is the scorer rather than the mechanism (slides 18–19).")],
+     H - 1.95, height=1.35)
 
 # =========================================================================
 # 3 — the correction
@@ -731,6 +757,70 @@ band(sl, [("+6.0 points of the +8.7 recall gap convert into correct answers", ""
      H - 2.1, height=1.45, label="What the reader actually answered")
 
 # =========================================================================
+# 17b — LongMemEval: the headline does not replicate
+# =========================================================================
+sl = slide()
+top = head(sl, "We tested our own headline on a second benchmark — it failed",
+           "LoCoMo is ten conversations. LongMemEval is 94 independent haystacks of "
+           "38–62 sessions each. The claim should survive the move. It does not.")
+rows = [["Store budget", "Retention", "P1-S select", "RAG store-all", "Selection − FIFO"]]
+for _b in (4096, 8192, 16384, 23000):
+    d = lme_at(_b, "P1-S select", "RAG store-all")
+    lo, hi = lme_at(_b, "P1-S select", "RAG store-all", field="ci_lo"), \
+             lme_at(_b, "P1-S select", "RAG store-all", field="ci_hi")
+    star = "*" if _b == 23000 else ""
+    rows.append([f"{star}{_b:,}{star}", f"{star}{100*_b/104191:.1f}%{star}",
+                 f"{star}{lme_ar(_b, 'P1-S select'):.1f}%{star}",
+                 f"{star}{lme_ar(_b, 'RAG store-all'):.1f}%{star}",
+                 f"{star}{d:+.1f}  [{lo:+.1f}, {hi:+.1f}]{star}"])
+table(sl, rows, top, size=19, col_w=[3.0, 2.4, 3.0, 3.2, 5.0], height=3.6, width=16.6)
+bullets(sl, [
+    ("At storage matched to LoCoMo's retention (22.1% vs 22.0%), selection loses to FIFO "
+     "by 21 answer points ", "— where LoCoMo gives +8.67. RAG scales as a cache must, 9.7% → "
+     "40.3%; P1-S peaks at 8,192 and then flattens."),
+], top + 4.0, size=21)
+band(sl, [("The mechanism is not what failed. The scorer is.", ""),
+          ("  HeuristicScorer's separation between evidence and non-evidence turns reverses "
+           "sign between the corpora: +0.0476 on LoCoMo, −0.0346 on LongMemEval. Eviction "
+           "orders on that utility, so on LongMemEval it discards evidence first — losing to "
+           "no ranking at all.",)],
+     top + 5.3, height=1.75, label="Why")
+caption(sl, "Written for LoCoMo's 32-token dialogue lines, dense in regex-catchable cues; "
+            "LongMemEval's turns are 210-token conversational prose. Consistent with §24.2, "
+            "where the fitted scorer's strongest single feature is turn length — a corpus-level "
+            "regularity, not a semantic one.   [results/longmemeval_S*.csv]",
+        H - 1.35, size=18)
+
+# =========================================================================
+# 17c — the confound we looked for and did not find
+# =========================================================================
+sl = slide()
+top = head(sl, "The obvious alternative explanation, ruled out",
+           "Before accepting a result that contradicts our own headline, we tried to break it.")
+bullets(sl, [
+    ("The suspicion. ", "MemGatePolicy reserves a fixed 25% of the context for recent turns "
+     "before retrieval is consulted; RAGPolicy reserves nothing. So \u201cP1-S vs RAG isolates "
+     "which turns are forgotten\u201d was not strictly true — they also differed in guaranteed "
+     "recency share."),
+    ("Why it should have mattered here. ", "That 512 tokens buys ~16 turns on LoCoMo but only "
+     "2–3 on LongMemEval, whose answer sits in one of 38–62 sessions chosen without regard to "
+     "recency. P1-S was plausibly spending a quarter of its context on turns that cannot answer "
+     "the question."),
+], top, size=21)
+rows = [["Arm at S=23,000", "Strict", "Answer recall"],
+        ["P1-S, split[0] = 0.25  (as measured)", "3.2%", "19.4%"],
+        ["P1-S, split[0] = 0     (reservation removed)", "2.1%", "19.4%"],
+        ["RAG store-all", "21.3%", "40.3%"]]
+table(sl, rows, top + 3.3, size=20, col_w=[8.4, 2.8, 3.4], height=2.5, width=14.6)
+band(sl, [("Removing the reservation changed the answer metric by exactly nothing: "
+           "+0.00, CI [+0.00, +0.00].", ""),
+          ("  The confound is real but not load-bearing. Selection still loses by −20.97 "
+           "either way, so the scorer-transfer failure is the whole story.",)],
+     top + 6.1, height=1.7, label="Result")
+caption(sl, "run_lme_split.py — same class, same scorer, same budgets, same retrieval depth; "
+            "only split[0] moves.   [results/longmemeval_split_S23000.csv]", H - 1.15, size=18)
+
+# =========================================================================
 # 18 — measurement findings
 # =========================================================================
 sl = slide()
@@ -821,10 +911,12 @@ bullets(sl, [
      "methodological findings, limitations."),
     ("docs/REVIEW2_PROGRESS_REPORT.md ", "— this review’s progress report: status, what changed "
      "since Review 1, the full technology inventory, and the plan to the final review."),
-    ("SESSION_RECORD.md ", "— the complete working record, §1–§28, written to be picked up cold."),
+    ("SESSION_RECORD.md ", "— the complete working record, §1–§33, written to be picked up cold."),
     ("frontend/index.html ", "— an interactive results dashboard. Every figure on it is read "
      "from the committed CSVs by frontend/build_data.py; nothing is typed by hand."),
-    ("memgate/ ", "— 5,430 lines of Python: the library, 13 runnable experiments, 61 tests."),
+    ("memgate/ ", "— ~6,500 lines of Python: the library, 17 runnable experiments, 68 tests."),
+    ("paper/main.pdf ", "— the IEEE conference paper, 6 pages, compiled from paper/main.tex with "
+     "every table generated from the committed CSVs."),
     ("memgate/results/ ", "— every CSV and every figure quoted in this deck, committed alongside "
      "the code that produced them."),
     ("docs/make_review2_deck.py ", "— this deck, generated from those same CSVs."),
@@ -854,8 +946,10 @@ tasks = [
     ("Ablation study", 1.3, 0.5, True),
     ("Storage budget, significance, scaling", 1.5, 0.7, True),
     ("P2 judge, byte accounting, learned scorer", 1.8, 0.6, True),
-    ("Full end-task run (715 questions)", 2.3, 0.8, False),
-    ("Abstractive compression + LongMemEval", 3.0, 1.4, False),
+    ("Full end-task run (715 questions)", 2.3, 0.8, True),
+    ("LongMemEval + the scorer-transfer finding", 2.6, 0.9, True),
+    ("IEEE paper: compiled, cut to 6 pages", 2.8, 0.6, True),
+    ("Abstractive compression to all ten conversations", 3.4, 1.0, False),
     ("Online learning of the eviction policy", 4.0, 1.2, False),
     ("Final report, documentation, defence", 4.8, 1.2, False),
 ]
@@ -875,8 +969,9 @@ for label, x in (("Review 1 · Jul", 0.15), ("This review · Sep", 2.15),
     tb, tf = textbox(sl, gx + x * colw - 1.0, y_end + 0.05, 2.0, 0.34)
     p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
     run(p, "● " + label, size=14, color=ACCENT)
-caption(sl, "Filled bars are complete. The critical path to the final review is the full "
-            "end-task run — the pipeline is built and validated; what it needs is machine time.",
+caption(sl, "Filled bars are complete. The critical path closed in September: the end-task run, "
+            "LongMemEval, and a compiled paper. What remains is a scorer that transfers across "
+            "corpora — which LongMemEval turned from a nice-to-have into the live question.",
         H - 0.95, size=19)
 
 # =========================================================================
@@ -894,20 +989,24 @@ for t in ["Ten conversations. Clustered intervals are wide because the cluster c
           "Concatenated streams are synthetic.",
           "Single embedder, single judge model. The judge result is evidence about a 0.5B model "
           "prompted per turn, not about LLM judging in general.",
-          "P3-learned is a headroom bound, not a component: a live agent has no future questions."]:
+          "P3-learned is a headroom bound, not a component: a live agent has no future questions.",
+          "The scorer is tuned to LoCoMo. Read +8.7 as what a policy recovers given a scorer that "
+          "suits the corpus — not as a property of scored selection in general.",
+          "On LongMemEval, strict recall is uninterpretable for a compressing arm: a gist carries "
+          "the evidence id of text it discarded. Answer recall is unaffected."]:
     p = tf.add_paragraph(); p.space_before = Pt(9); p.line_spacing = 1.03
     run(p, "•  ", size=20, color=ACCENT); run(p, t, size=20)
 tb2, tf2 = textbox(sl, L + 9.4, top, 8.8, 6.6)
 p = tf2.paragraphs[0]
 run(p, "Remaining work", size=26, bold=True, color=ACCENT)
-for n, t, e in [("1", "Full 715-question end-task run. Converts the project from a ceiling to an "
-                      "accuracy claim; pipeline, controls and cache already validated.", "~4–6 h, resumable"),
-                ("2", "Abstractive compression, to test whether the negative result is specific "
-                      "to extractive methods.", "1 session"),
-                ("3", "LongMemEval — genuinely long single conversations, replacing the "
-                      "concatenated-stream stress test.", "1–2 sessions"),
-                ("4", "Online learning of the eviction policy — the only route that makes a "
-                      "learned scorer deployable.", "2 sessions")]:
+for n, t, e in [("1", "A scorer that transfers across corpora. LongMemEval turned this from a "
+                      "nice-to-have into the project's live question.", "the critical path"),
+                ("2", "Abstractive compression to all ten conversations. Built and running, but "
+                      "the result on disk is one conversation — a single cluster, so its "
+                      "intervals are degenerate and not quotable.", "~4 h of generation"),
+                ("3", "Online learning of the eviction policy — the only route that makes a "
+                      "learned scorer deployable. Built; pilot-scale at two conversations.", "1 session"),
+                ("4", "The S=32,768 LongMemEval point, to close the retention sweep.", "~20 min, alone")]:
     p = tf2.add_paragraph(); p.space_before = Pt(11); p.line_spacing = 1.03
     run(p, n + ".  ", size=20, bold=True, color=ACCENT)
     run(p, t, size=20)
@@ -929,13 +1028,17 @@ bullets(sl, [
      "where a policy with no index at all wins outright."),
     ("An LLM judge — the obvious way to improve the scorer — loses to a regex, ",
      "and the reason is diagnosable: it rates turns in isolation."),
-], top, size=24)
+    ("On a second benchmark the headline does not replicate, ",
+     "and the cause is the scorer, not the mechanism: its separation between evidence and "
+     "non-evidence turns reverses sign between corpora."),
+], top, size=23)
 band(sl, [("Practical guidance: keep a scored subset whole; do not compress everything. ", ""),
           ("And denominate the budget in bytes, including the index, or the comparison is not "
            "the one you think you are making.",)],
      top + 5.0, height=1.7, size=26)
 caption(sl, "Presented as “a memory layer with three tiers”, this work would already have been "
-            "done. Measured honestly, the more useful result is what doesn’t work.",
+            "done. Measured honestly, the more useful result is what doesn’t work — including, "
+            "twice now, our own headline.",
         top + 6.95, size=20)
 
 # =========================================================================
@@ -1037,7 +1140,9 @@ layout = """Capstone Project/
     run_ablations.py              23-configuration component attribution
     diagnose.py                   attributes every miss to one component
     make_figures.py               fig1–fig5
-    test_memgate.py               61 tests
+    run_longmemeval.py            LongMemEval, swept by store budget
+    run_lme_split.py              the §30.4 recency-confound control
+    test_memgate.py               68 tests
     results/                      every CSV and figure quoted in this deck"""
 for i, line in enumerate(layout.split("\n")):
     p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()

@@ -1,0 +1,7 @@
+arm,vs,isolates,metric,delta,ci_lo,ci_hi,significant,strict_recall,answer_recall,store_budget,context_budget,items,n,answer_n
+P1-S split 0,P1-S split .25,the recency reservation alone,strict,-1.0638297872340425,-3.1914893617021276,0.0,False,2.127659574468085,19.35483870967742,23000,2048,94,94,62
+P1-S split 0,P1-S split .25,the recency reservation alone,answer,0.0,0.0,0.0,False,2.127659574468085,19.35483870967742,23000,2048,94,94,62
+P1-S split 0,RAG store-all,"which turns are forgotten, unconfounded",strict,-19.148936170212767,-27.659574468085108,-11.702127659574469,True,2.127659574468085,19.35483870967742,23000,2048,94,94,62
+P1-S split 0,RAG store-all,"which turns are forgotten, unconfounded",answer,-20.967741935483872,-33.87096774193548,-8.064516129032258,True,2.127659574468085,19.35483870967742,23000,2048,94,94,62
+P1-S split .25,RAG store-all,"which turns are forgotten, as in §30",strict,-18.085106382978726,-26.595744680851062,-10.638297872340425,True,3.1914893617021276,19.35483870967742,23000,2048,94,94,62
+P1-S split .25,RAG store-all,"which turns are forgotten, as in §30",answer,-20.967741935483872,-33.87096774193548,-6.451612903225806,True,3.1914893617021276,19.35483870967742,23000,2048,94,94,62
