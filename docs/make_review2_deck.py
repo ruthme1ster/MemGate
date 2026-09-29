@@ -23,7 +23,9 @@ from pptx.util import Inches, Pt, Emu
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RESULTS = os.path.join(ROOT, "memgate", "results")
 FIGS = os.path.join(RESULTS, "figures")
-OUT = os.path.join(ROOT, "docs", "MemGate_Capstone_Review2_NMIMS.pptx")
+# Project root, alongside MemGate_Capstone_Review1_NMIMS_v3.pptx -- both decks
+# live in one place. The generator, notes and progress report stay in docs/.
+OUT = os.path.join(ROOT, "MemGate_Capstone_Review2_NMIMS.pptx")
 
 # --- house style, taken from the Review 1 deck -----------------------------
 FONT = "Times New Roman"
