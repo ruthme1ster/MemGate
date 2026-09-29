@@ -332,6 +332,59 @@ places the remaining headroom in the reader rather than in the memory layer.
 
 ---
 
+### 3.9 The headline does not transfer to a second benchmark
+
+LoCoMo is ten conversations. A claim that holds only on the corpus its scorer
+was tuned against is not a claim, so the §3.3 result was re-run on **LongMemEval**
+— 94 independent haystacks of 38–62 sessions, ~500 turns each. The store budget
+was swept to put LongMemEval at LoCoMo's retention (22.1% against 22.0%).
+
+| Store | Retention | P1-S select | RAG store-all | Selection − FIFO (answer) |
+|---:|---:|---:|---:|---|
+| 4,096 | 3.9% | 14.5% | 9.7% | +4.84 [−3.23, +12.90] n.s. |
+| 8,192 | 7.9% | 22.6% | 14.5% | +8.06 [−1.61, +17.74] n.s. |
+| 16,384 | 15.7% | 21.0% | 27.4% | −6.45 [−17.74, +4.84] n.s. |
+| **23,000** | **22.1%** | **19.4%** | **40.3%** | **−20.97 [−33.87, −8.06] significant** |
+
+**It does not replicate.** At matched retention selection *loses* to FIFO by
+20.97 answer points where LoCoMo gives +8.67. RAG scales as a cache must (9.7% →
+40.3%); P1-S peaks at 8,192 and then flattens.
+
+**The cause is the scorer, not the mechanism.** Scoring evidence against
+non-evidence turns directly, with no policy or store involved:
+
+| | evidence | non-evidence | separation |
+|---|---:|---:|---|
+| LoCoMo | 0.2484 | 0.2008 | **+0.0476** |
+| LongMemEval | 0.3727 | 0.4074 | **−0.0346** |
+
+The separation **reverses sign**. Eviction orders on that utility, so on
+LongMemEval it discards evidence first and loses to no ranking at all. The
+heuristic was written for LoCoMo's 32-token dialogue lines, dense in
+regex-catchable cues; LongMemEval's turns are 209.6-token conversational prose.
+This is consistent with §3.6, where the fitted scorer's strongest single feature
+is turn length — a corpus-level regularity rather than a semantic one.
+
+**The obvious confound was checked and is not load-bearing.**
+`MemGatePolicy.build_context` reserves 25% of the context for Tier-1 recency
+before retrieval is consulted; `RAGPolicy` reserves nothing, so the contrast was
+not the single-variable comparison it claimed. Removing the reservation
+(`run_lme_split.py`) moved the answer metric by **exactly zero** — +0.00, CI
+[+0.00, +0.00], identical outcomes on all 62 answer-recoverable questions.
+Selection loses by 20.97 either way.
+
+**Two cautions on reading this.** The answer metric rests on 62
+answer-recoverable questions. And **strict recall is uninterpretable here for a
+compressing arm**: a gist carries the evidence id of text it discarded, which is
+exactly what §3.2's answer-presence metric exists to catch. P1-A's 54.3% strict
+against P1-S's 3.2% is identifier bookkeeping. Answer recall is unaffected.
+
+What §3.3 claims is therefore bounded: **+8.67 is what a decision policy
+recovers given a scorer suited to the corpus**, not a property of scored
+selection in general.
+
+---
+
 ## 4. Methodological findings
 
 Three of this project's most useful results are about *measurement*, and each
@@ -380,7 +433,12 @@ the eviction order.
 * **Extractive compression only.** P1-A selects words; it does not rewrite.
   Abstractive re-summarisation may retain more content per token, and the
   negative result about compression is stated for the extractive case.
-* **Concatenated streams are synthetic** (§3.4).
+* **Concatenated streams are synthetic** (§3.4) — now superseded by the
+  LongMemEval run of §3.9, which uses natural long histories.
+* **The scorer is tuned to this corpus** (§3.9). Its separation between evidence
+  and non-evidence turns reverses sign on LongMemEval, and scored eviction
+  consequently loses to FIFO there. Whether the mechanism or only this scorer
+  fails to transfer is open, and is the most urgent remaining question.
 * **P3-learned is a headroom bound, not a component** (§3.6).
 * **Single embedder and single judge model.** Both are ablated but neither is
   varied across families. The §3.7 negative is therefore evidence about *a 0.5B

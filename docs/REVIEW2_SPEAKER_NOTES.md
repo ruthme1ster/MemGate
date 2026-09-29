@@ -550,33 +550,109 @@ something later asks for it."
 
 ---
 
-### Slide 17 — End-task accuracy: built, and honestly labelled
+### Slide 17 — End-task accuracy: the gap survives a real reader
 
-**On screen.** Six-arm table, fig5, the two controls, and a bordered warning
-band.
+**On screen.** Six-arm table, fig5, the two controls, and the result band.
 
-**Say — the warning first, before any number.** "Read the flag before the
-table. This is a **12-question smoke run. It is not a result.**
+**Say.** "Every number so far is *context recall* — did the evidence reach the
+prompt — which is the ceiling on accuracy, not accuracy. This slide is the
+accuracy, on all 715 answer-recoverable questions through one fixed reader.
 
-What it demonstrates is that the pipeline works end to end: both controls, the
-generation cache, the scoring. Every number so far in this deck is *context
-recall* — did the evidence reach the prompt — which is the ceiling on accuracy,
-not accuracy. This arm sends the assembled context through a real reader and
-scores the output with the same normaliser, so 'the answer reached the context'
-and 'the answer reached the output' are one predicate applied at two points.
+Of the +8.7-point recall gap, **+6.0 points convert into correct answers**, 95%
+CI [+3.3, +9.1] clustered by conversation. That is 69% of the ceiling gap
+realised.
 
-Two controls the comparison can't be read without. Closed-book is the floor — a
-model answering from parametric knowledge would make every policy look good.
-Oracle is the ceiling.
+Two controls you can't read the table without. Closed-book scores **1.7%** — so
+parametric knowledge contributes almost nothing here, and the margin above that
+floor is the memory layer and essentially nothing else. Had it been high, every
+arm would have looked good for reasons having nothing to do with memory. Oracle
+is the ceiling at 67.3%, and it converts only two-thirds — which locates the
+remaining headroom in the reader, not in selection.
 
-The full 715-question run is four to six hours of local generation. It's the
-critical path to the final review."
+One detail worth volunteering: the advantage arrives by both routes. P1-S places
+the answer in context more often, 36.8% against 28.1%, *and* its contexts are
+used more successfully when it does, 49.4% against 42.3%. Only the first was
+predicted."
 
-**Land.** Not a result. A validated pipeline.
+**If asked why one reader.** "Stated as a limitation. The ordering is what we
+claim; the absolute numbers are properties of that reader."
+
+**Land.** The claim is no longer about what reached the prompt. It is about what
+the model answered.
 
 ---
 
-### Slide 18 — Three findings about measurement
+### Slide 18 — We tested our own headline on a second benchmark, and it failed
+
+**On screen.** The four-budget sweep table with clustered intervals, and the
+"Why" band naming the scorer.
+
+**Say — do not soften this.** "Everything up to here is LoCoMo: ten
+conversations. A claim that only holds on the corpus it was tuned on is not a
+claim. So we ran LongMemEval — 94 independent haystacks, 38 to 62 sessions each,
+about 500 turns per item.
+
+It does not replicate. Read the last row: at storage matched to LoCoMo's
+retention — 22.1% against 22.0% — **selection loses to FIFO by 21 answer
+points**, where LoCoMo gives +8.67. The interval excludes zero.
+
+Look at the two middle columns. RAG scales the way a cache must, 9.7% up to
+40.3% as you give it room. Ours peaks at 8,192 and then flattens. A policy that
+stops benefiting from storage is telling you something.
+
+Here is what it was telling us. The scorer's separation between evidence and
+non-evidence turns **reverses sign** between the two corpora: plus 0.048 on
+LoCoMo, minus 0.035 on LongMemEval. Eviction orders on that utility, so on
+LongMemEval it discards evidence *first*. It loses to no ranking at all.
+
+Why: the heuristic was written for LoCoMo's 32-token dialogue lines, dense in
+the cues a regex can catch. LongMemEval's turns are 210-token conversational
+prose. It is a generalisation failure of the scorer — not of the mechanism, and
+not a bug."
+
+**If asked whether this kills the project.** "No, and it is worth being precise.
+The +8.67 stands on LoCoMo; nothing earlier is withdrawn. What changes is its
+scope: it is what a decision policy recovers *given a scorer suited to the
+corpus*. The paper now carries that limitation in those words. And the finding
+itself is more useful than another benchmark that agreed with us — it tells us
+where the next work is."
+
+**Land.** We went looking for the result that would embarrass us, and published
+it.
+
+---
+
+### Slide 19 — The obvious alternative explanation, ruled out
+
+**On screen.** The suspicion, why it should have mattered here, the three-arm
+table, and the null result band.
+
+**Say.** "Before accepting a result that contradicts our own headline, we tried
+to break it.
+
+The suspicion was ours, not a reviewer's. Our policy reserves a fixed 25% of the
+context for the most recent turns before retrieval is consulted. RAG reserves
+nothing. So 'this comparison isolates which turns are forgotten' was not
+strictly true — they also differed in guaranteed recency share.
+
+And it should have mattered here specifically. That 512 tokens buys about 16
+turns on LoCoMo but only two or three on LongMemEval, where the answer sits in
+one of 38 to 62 sessions picked without regard to recency. We were plausibly
+spending a quarter of the context on turns that could not answer the question.
+
+We removed the reservation and re-ran it. **It changed the answer metric by
+exactly nothing** — plus 0.00, interval zero to zero, identical outcomes on all
+62 answer-recoverable questions. Selection still loses by 21 points either way.
+
+So the confound is real, and it is not load-bearing. The scorer transfer failure
+is the whole story."
+
+**Land.** The alternative explanation was ours to find, and we checked it before
+anyone had to ask.
+
+---
+
+### Slide 20 — Three findings about measurement
 
 **On screen.** A table of three findings with what each cost, plus the NaN
 footnote.
@@ -607,7 +683,7 @@ would have scored NaN and silently inverted our eviction order."
 
 ---
 
-### Slide 19 — Tools and technology
+### Slide 21 — Tools and technology
 
 **On screen.** Proposed at Review 1 / actually used / why it changed.
 
@@ -628,7 +704,7 @@ because it brings its own retrieval and its own prompt assembly."
 
 ---
 
-### Slide 20 — Verification and engineering discipline
+### Slide 22 — Verification and engineering discipline
 
 **On screen.** Guard / what it prevents.
 
@@ -649,7 +725,7 @@ figure in this deck can't drift from the code that made it."
 
 ---
 
-### Slide 21 — Deliverables
+### Slide 23 — Deliverables
 
 **On screen.** Seven items: REPORT.md, the progress report, SESSION_RECORD.md,
 the dashboard, the library, the results, the deck generator.
@@ -664,7 +740,7 @@ results are committed, and each slide names the file it came from."
 
 ---
 
-### Slide 22 — Timeline
+### Slide 24 — Timeline
 
 **On screen.** Gantt: filled bars complete, hollow bars pending, four
 milestones.
@@ -676,7 +752,7 @@ learning in November, and the final report in December."
 
 ---
 
-### Slide 23 — Limitations, and what remains
+### Slide 25 — Limitations, and what remains
 
 **On screen.** Two columns: six limitations, four remaining items with effort
 estimates.
@@ -696,7 +772,7 @@ Four things remain, with effort estimates attached."
 
 ---
 
-### Slide 24 — Conclusion as it stands
+### Slide 26 — Conclusion as it stands
 
 **On screen.** Five findings, the practical-guidance band, the closing line.
 
@@ -715,7 +791,7 @@ been done. Measured honestly, the more useful result is what doesn't work."
 
 ---
 
-### Slide 25 — References
+### Slide 27 — References
 
 **On screen.** 13 references; MemGPT flagged as the base paper, LoCoMo as the
 benchmark.
@@ -728,7 +804,7 @@ contributing."
 
 ---
 
-### Slide 26 — Thank you
+### Slide 28 — Thank you
 
 **Say.** "Thank you. Questions welcome — including on the results that didn't
 work."
