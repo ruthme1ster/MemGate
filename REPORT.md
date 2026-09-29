@@ -332,44 +332,6 @@ places the remaining headroom in the reader rather than in the memory layer.
 
 ---
 
-### 3.10 Online learning reaches parity with the hand-written heuristic
-
-§3.6's fitted scorer is an upper bound: it is trained on which turns were in
-fact cited, which a live agent cannot know. P4 replaces that with a label-free
-runtime signal — it updates from retrieval feedback every 25 turns, using no
-future questions. Policy, budgets and retrieval are pinned at §3.3's
-configuration, so only the scorer varies.
-
-| Scorer | Evidence recall | Answer recall | vs heuristic (answer) |
-|---|---:|---:|---|
-| P0 recency (unscored) | 12.6% | 25.6% | −11.19 [−17.30, −6.21] significant |
-| P1 heuristic | 19.8% | 36.8% | — |
-| P4 online | 18.4% | 35.2% | **−1.54 [−4.63, +0.79] n.s.** |
-
-n = 1,527 questions / 715 answer-recoverable, clustered over ten conversations;
-1,233 updates at α = 0.76.
-
-**P4 matches the heuristic** — the interval straddles zero — while needing no
-hand-picked cues and no labels. It does not reach §3.6's fitted 48.3%, and the
-distance between them is the price of not having an oracle.
-
-The weights it learned are worth reporting, because they bear on §3.9:
-
-```
-ends_period  -0.529     is_question  +0.352
-n_words      -0.372     has_month    +0.202
-n_caps       -0.320     has_digit    -0.216
-```
-
-It learned to *disfavour* long turns and sentence-final punctuation. That is
-correct on LoCoMo, whose evidence turns are short factual lines. On
-LongMemEval, where every turn is ~210-token prose ending in a period, these same
-weights point the wrong way — so P4 is a candidate for fixing §3.9's transfer
-failure only if it is allowed to re-learn per corpus. Untested, and the obvious
-next experiment.
-
----
-
 ### 3.9 The headline does not transfer to a second benchmark
 
 LoCoMo is ten conversations. A claim that holds only on the corpus its scorer
@@ -426,6 +388,79 @@ selection in general.
 
 ---
 
+### 3.10 A better compressor helps, and still loses to dropping
+
+§3.2's negative result is stated for *extractive* compression: P1-A selects
+words from an evicted turn but does not rewrite it. Replacing that one component
+with a 1.5B model that rewrites each evicted turn — everything else held at
+§3.2's configuration — tests whether the finding was about compression or about
+the compressor.
+
+| Arm | Evidence recall | Answer recall | Time |
+|---|---:|---:|---:|
+| RAG store-all | 17.8% | 28.1% | 0.5 s |
+| P1-A extractive | 30.5% | 30.1% | 76 s |
+| P1-A abstractive | 32.3% | 34.1% | 3,892 s |
+| **P1-S select** | 19.8% | **36.8%** | **2.1 s** |
+
+| Contrast (answer recall) | Δ | 95% CI | |
+|---|---:|---|---|
+| abstractive − extractive | **+4.06** | [+0.84, +6.66] | significant |
+| select − extractive | **+6.71** | [+4.26, +9.50] | significant |
+
+**Both halves matter.** Rewriting beats word-selection by 4.06 points, so part of
+§3.2's result was the compressor rather than compression — a correction to our
+own claim. But dropping still beats rewriting, 36.8% against 34.1%, so the
+optimum remains at the vertex.
+
+The cost asymmetry is the practical finding: 4,879 generations and 3,892 seconds
+to finish 2.7 points *behind* a policy that takes 2.1 seconds and simply forgets.
+§3.4's crossover is not reached on the fidelity axis either.
+
+This supersedes the earlier one-conversation pilot, whose intervals were
+degenerate — a single cluster leaves the paired bootstrap nothing to resample —
+and whose significance column was an artefact of that.
+
+---
+
+### 3.11 Online learning reaches parity with the hand-written heuristic
+
+§3.6's fitted scorer is an upper bound: it is trained on which turns were in
+fact cited, which a live agent cannot know. P4 replaces that with a label-free
+runtime signal — it updates from retrieval feedback every 25 turns, using no
+future questions. Policy, budgets and retrieval are pinned at §3.3's
+configuration, so only the scorer varies.
+
+| Scorer | Evidence recall | Answer recall | vs heuristic (answer) |
+|---|---:|---:|---|
+| P0 recency (unscored) | 12.6% | 25.6% | −11.19 [−17.30, −6.21] significant |
+| P1 heuristic | 19.8% | 36.8% | — |
+| P4 online | 18.4% | 35.2% | **−1.54 [−4.63, +0.79] n.s.** |
+
+n = 1,527 questions / 715 answer-recoverable, clustered over ten conversations;
+1,233 updates at α = 0.76.
+
+**P4 matches the heuristic** — the interval straddles zero — while needing no
+hand-picked cues and no labels. It does not reach §3.6's fitted 48.3%, and the
+distance between them is the price of not having an oracle.
+
+The weights it learned are worth reporting, because they bear on §3.9:
+
+```
+ends_period  -0.529     is_question  +0.352
+n_words      -0.372     has_month    +0.202
+n_caps       -0.320     has_digit    -0.216
+```
+
+It learned to *disfavour* long turns and sentence-final punctuation. That is
+correct on LoCoMo, whose evidence turns are short factual lines. On
+LongMemEval, where every turn is ~210-token prose ending in a period, these same
+weights point the wrong way — so P4 is a candidate for fixing §3.9's transfer
+failure only if it is allowed to re-learn per corpus. Untested, and the obvious
+next experiment.
+
+---
+
 ## 4. Methodological findings
 
 Three of this project's most useful results are about *measurement*, and each
@@ -471,9 +506,10 @@ the eviction order.
   greedily. The *ordering* of policies is what we claim; the absolute
   accuracies are properties of that reader, and the oracle's 67.3% shows much
   of the remaining error is the reader rather than the memory layer.
-* **Extractive compression only.** P1-A selects words; it does not rewrite.
-  Abstractive re-summarisation may retain more content per token, and the
-  negative result about compression is stated for the extractive case.
+* **Compression was tested in both forms** (§3.10). A rewriting summariser is
+  worth +4.06 answer points over word-selection, so part of the negative result
+  was the compressor; it still loses to dropping by 2.7 points at 1,850× the
+  cost. What is untested is a larger summariser.
 * **Concatenated streams are synthetic** (§3.4) — now superseded by the
   LongMemEval run of §3.9, which uses natural long histories.
 * **The scorer is tuned to this corpus** (§3.9). Its separation between evidence

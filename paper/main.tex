@@ -531,9 +531,12 @@ accuracies: the oracle arm's 67.3\% shows much of the remaining error is the
 reader, and a larger one would raise every arm and could compress or widen the
 margins.
 
-\emph{Extractive compression only.} P1-A selects words and does not rewrite
-them. Our negative result for compression is stated for the extractive case,
-and an abstractive summariser may retain more content per token.
+\emph{Compression was tested in both forms.} Replacing P1-A's word-selection
+with a 1.5B model rewriting each evicted turn is worth $+4.06$ answer points
+(CI $[+0.84, +6.66]$), so part of the negative result was the compressor rather
+than compression. Selection still wins: 36.8\% against 34.1\%, at 2.1\,s
+against 3{,}892\,s and 4{,}879 generations. The claim narrows to: a better
+compressor helps, and does not overtake dropping.
 
 \emph{Concatenated streams are synthetic}, as discussed in
 Section~\ref{sec:scaling}.
@@ -575,12 +578,12 @@ results above changed in sign or in magnitude once a measurement error was
 removed, and none of those errors was visible in the aggregate numbers they
 affected.
 
-Future work follows from the limitations: abstractive compression, to test
-whether the negative result is specific to extractive methods; a scorer that
-transfers across corpora, which the LongMemEval result above makes the most
-urgent of the three; and learning the eviction policy online, which would
-remove the dependence on future questions that makes the fitted scorer an upper
-bound rather than a usable component.
+Future work is now a single question. A scorer learned online from retrieval
+feedback already matches the hand-written heuristic on LoCoMo without labels or
+future questions ($-1.54$, n.s.), but the cues it learns --- short turns, no
+sentence-final period --- are the ones LongMemEval inverts. Whether such a
+scorer, allowed to re-learn per corpus, closes the transfer gap is what this
+work leaves open.
 
 \section*{Acknowledgment}
 The authors thank the faculty of SVKM's NMIMS, Indore Campus, for their

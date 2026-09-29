@@ -774,12 +774,22 @@ Four things remain, with effort estimates attached."
 ---
 
 
-**If asked about the pilots.** "Two of the three are now closed. Online learning
-ran on all ten conversations and reaches parity with the hand-written heuristic
-— minus 1.5 answer points, interval straddling zero, with no labels and no future
-questions. The two-conversation pilot had reported a significant loss; that was
-an artifact of two clusters, and we say so. Abstractive is the one still at pilot
-scale."
+**If asked about the three scoped tracks.** "All three are closed, and each one
+revised a claim of ours.
+
+Online learning ran on all ten conversations and reaches parity with the
+hand-written heuristic — minus 1.5 answer points, interval straddling zero, with
+no labels and no future questions. The two-conversation pilot had reported a
+significant loss; that was an artifact of two clusters, and we say so.
+
+Abstractive compression: rewriting an evicted turn with a 1.5B model beats
+selecting words from it by **+4.1 answer points**, significant. So part of our
+compression result was about the compressor, not about compression — we were
+wrong about that, and the better compressor was worth having. But dropping still
+wins, 36.8 against 34.1, and it does it in 2.1 seconds against 3,892 and 4,879
+model calls. The claim narrows; it does not fall.
+
+LongMemEval is slides 18 and 19."
 
 ### Slide 26 — Conclusion as it stands
 

@@ -412,11 +412,12 @@ Three readings, all significant under conversation-level clustering:
 3. ~~Charge for the embeddings~~ — done: `cost_mode="bytes"` (`run_cost_model.py`).
 4. ~~End-task accuracy through a real model~~ — done: **+6.0 of the +8.7 points
    realised**, 69% of the ceiling gap (`run_endtask.py`, 715 questions).
-5. **Abstractive compression** — built (`run_abstractive.py`), but the only
-   result on disk is **one conversation** (n=149). One cluster leaves the paired
-   bootstrap nothing to resample, so every interval in `results/abstractive.csv`
-   is degenerate (`ci_lo == ci_hi == delta`) and its `significant` column is an
-   artefact of that. Needs all ten conversations before it is quotable.
+5. ~~Abstractive compression~~ — **done, all ten conversations** (§3.10 of
+   REPORT.md). Rewriting beats word-selection by **+4.06 answer points**
+   (CI [+0.84, +6.66]), so part of the §23 negative result was the compressor
+   rather than compression. Dropping still wins — 36.8% against 34.1% — at 2.1 s
+   against 3,892 s and 4,879 generations. The earlier one-conversation pilot,
+   whose intervals were degenerate, is superseded.
 6. ~~A genuinely long benchmark (LongMemEval)~~ — **done, and it did not go our
    way** (`run_longmemeval.py`, SESSION_RECORD §30). At storage matched to
    LoCoMo's retention, scored selection **loses to FIFO by 21 answer points**
@@ -427,7 +428,10 @@ Three readings, all significant under conversation-level clustering:
    210-token prose. Two caveats before quoting any of it — the §30.4 recency
    confound (`split[0]=0`) is unfixed, and **strict recall is uninterpretable
    here for compressing arms** (§30.6). Answer recall is unaffected.
-7. **Online learning of the eviction policy** — built (`run_online.py`), but
-   pilot-scale at two conversations (n=230).
+7. ~~Online learning of the eviction policy~~ — **done, all ten conversations**.
+   P4 reaches parity with the hand-written heuristic (−1.54, n.s.) from
+   retrieval feedback alone. The two-conversation pilot's "significant loss" was
+   an artefact of two clusters. It learns to disfavour long turns and
+   sentence-final periods — right on LoCoMo, backwards on LongMemEval.
 8. **A scorer that transfers across corpora** — what item 6 turned into, and now
    the project's most interesting open question.

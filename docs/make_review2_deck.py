@@ -317,8 +317,8 @@ table(sl, [
     ["LongMemEval — the headline tested on a second benchmark", "*Complete*",
      "94 haystacks; it does not replicate, and we know why"],
     ["IEEE paper — compiled, cut to 6 pages", "*Complete*", "paper/main.pdf, 19/19 citations"],
-    ["Abstractive compression · online learning", "Pilot only",
-     "1 and 2 conversations — intervals not yet quotable"],
+    ["Abstractive compression · online learning", "*Complete*",
+     "all ten conversations; both revised a claim of ours"],
 ], top, size=18, col_w=[8, 2.4, 7.8])
 band(sl, [("The headline:  "),
           ("+%.1f answer-recall points" % gap, " for choosing which turns to forget, over forgetting "
@@ -988,7 +988,9 @@ run(p, "Stated limitations", size=26, bold=True, color=ACCENT)
 for t in ["Ten conversations. Clustered intervals are wide because the cluster count is small — "
           "and the one effect that does not survive clustering is reported as not significant.",
           "Context recall is the ceiling on end-task accuracy, not accuracy itself.",
-          "Compression tested is extractive. The negative result is stated for that case only.",
+          "Compression is now tested in both forms: rewriting beats word-selection by +4.1 "
+          "answer points and still loses to dropping by 2.7, at 1,850x the cost. Untested: a "
+          "larger summariser.",
           "Concatenated streams are synthetic.",
           "Single embedder, single judge model. The judge result is evidence about a 0.5B model "
           "prompted per turn, not about LLM judging in general.",
@@ -1002,14 +1004,15 @@ for t in ["Ten conversations. Clustered intervals are wide because the cluster c
 tb2, tf2 = textbox(sl, L + 9.4, top, 8.8, 6.6)
 p = tf2.paragraphs[0]
 run(p, "Remaining work", size=26, bold=True, color=ACCENT)
-for n, t, e in [("1", "A scorer that transfers across corpora. LongMemEval turned this from a "
-                      "nice-to-have into the project's live question.", "the critical path"),
-                ("2", "Abstractive compression to all ten conversations. Built and running, but "
-                      "the result on disk is one conversation — a single cluster, so its "
-                      "intervals are degenerate and not quotable.", "~4 h of generation"),
-                ("3", "Online learning of the eviction policy — the only route that makes a "
-                      "learned scorer deployable. Built; pilot-scale at two conversations.", "1 session"),
-                ("4", "The S=32,768 LongMemEval point, to close the retention sweep.", "~20 min, alone")]:
+for n, t, e in [("1", "A scorer that transfers across corpora. Every other track is closed; "
+                      "this is what the final review should be about.", "the critical path"),
+                ("2", "P4 online, re-learning per corpus, run on LongMemEval. It reaches parity "
+                      "on LoCoMo without labels — but the cues it learns are the ones "
+                      "LongMemEval inverts.", "the obvious first try"),
+                ("3", "A larger summariser. Rewriting is worth +4.1 answer points over "
+                      "word-selection; whether a bigger model closes the last 2.7 to dropping "
+                      "is untested.", "1 session"),
+                ("4", "A second reader model, to separate the memory layer from this one.", "1 session")]:
     p = tf2.add_paragraph(); p.space_before = Pt(11); p.line_spacing = 1.03
     run(p, n + ".  ", size=20, bold=True, color=ACCENT)
     run(p, t, size=20)

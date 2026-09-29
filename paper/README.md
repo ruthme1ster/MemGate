@@ -120,16 +120,11 @@ answer and the second does not.
 Section~\ref{sec:endtask}, with the corresponding limitation replaced by the
 single-reader bound. The rule below is what kept it out until it was real.)*
 
-**Abstractive compression.** `run_abstractive.py` exists and runs, but the only
-result on disk is **one conversation** (n=149). With a single cluster the
-paired bootstrap has nothing to resample, so every interval in
-`results/abstractive.csv` is degenerate — `ci_lo == ci_hi == delta` — and its
-`significant` column is an artifact of that, not a finding. Needs all ten
-conversations before it is quotable. Until then the Limitations paragraph
-*"Extractive compression only"* stands as written.
-
-**Online learning.** `run_online.py`, likewise pilot-scale at **two
-conversations** (n=230). Two clusters is an interval in form only.
+**All three of the scoped tracks are now measured at full scale** and appear in
+the paper as results or bounds, not as promises: abstractive compression
+(+4.06 answer points over extractive, still losing to dropping), online learning
+(parity with the heuristic, no labels), and LongMemEval (the headline does not
+transfer; the scorer's evidence separation reverses sign).
 
 **LongMemEval.** `run_longmemeval.py` and the data are in place. Note when
 reading its output that the item count and the answer-recoverable count differ

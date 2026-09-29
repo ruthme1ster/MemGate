@@ -2054,3 +2054,70 @@ run on LongMemEval.
 373 its one-conversation pilot used. Running under `nohup` so it outlives the
 session's other work; log in the scratchpad. This closes the last of §29.5's
 three tracks.
+
+## 38. Gap 3 — abstractive compression at full scale
+
+`run_abstractive.py` on all ten conversations. 4,879 generations, 383 cache
+hits, 0 fallbacks, 3,892 s in the summariser arm.
+
+```
+  RAG store-all      strict 17.8%   answer 28.1%      0.5s
+  P1-A extractive    strict 30.5%   answer 30.1%     76.3s
+  P1-A abstractive   strict 32.3%   answer 34.1%   3892.3s
+  P1-S select        strict 19.8%   answer 36.8%      2.1s
+
+  abstractive - extractive   answer   +4.06  [+0.84,  +6.66]  significant
+  select      - extractive   answer   +6.71  [+4.26,  +9.50]  significant
+```
+
+**Two findings, and they cut against each other.**
+
+1. **A better compressor genuinely helps.** Rewriting beats word-selection by
+   +4.06 answer points on real ten-cluster intervals. Part of §22/§23's negative
+   result was about the *compressor*, not about compression. That is a
+   correction to our own claim, found by our own experiment.
+2. **Dropping still wins.** 36.8% against 34.1%. Even with a 1.5B model
+   rewriting every evicted turn, keeping a scored subset whole beats compressing
+   everything. The optimum stays at the vertex; §23 narrows rather than falls.
+
+The cost asymmetry is the practical result: **3,892 s and 4,879 model calls to
+finish 2.7 points behind a policy that takes 2.1 s and simply forgets.** §24.1's
+crossover is not reached on the fidelity axis either.
+
+This supersedes the one-conversation pilot recorded in §32, whose intervals were
+degenerate (`ci_lo == ci_hi == delta`, one cluster) and whose `significant`
+column was an artefact. `results/abstractive.csv` now carries real intervals.
+
+## 39. All three scoped tracks closed — and each revised a claim
+
+§29.5 scoped abstractive, LongMemEval and online for the final review. All three
+are now measured at full scale, and **none of them simply confirmed what we
+believed**:
+
+| Track | What we expected | What it gave |
+|---|---|---|
+| LongMemEval (§30) | the +8.67 replicates | it reverses to −20.97; the scorer's evidence separation flips sign |
+| Online (§37.2) | a significant loss, per the pilot | parity, −1.54 n.s.; the pilot was a two-cluster artefact |
+| Abstractive (§38) | compression loses, full stop | rewriting is worth +4.06; dropping still wins |
+
+### Propagated
+
+`REPORT.md` §3.9/§3.10/§3.11 (and the §3.10/§3.9 ordering bug from the first
+insert, fixed); `paper/main.tex` — the *"Extractive compression only"*
+limitation replaced by the measured result, and future work reduced to the one
+open question; the deck — status, limitations and remaining work; the speaker
+notes — the "three scoped tracks" answer; `memgate/README.md` and
+`paper/README.md`.
+
+Paper still compiles at **6 pages**, 19/19 citations, 0 undefined references.
+
+### What is actually left
+
+1. **A scorer that transfers.** Every other track is closed. P4 online is the
+   obvious first try — it reaches parity without labels, but the cues it learns
+   (short turns, no sentence-final period) are the ones LongMemEval inverts, so
+   it must be allowed to re-learn per corpus. Untested.
+2. A larger summariser, to see whether the last 2.7 points to dropping close.
+3. A second reader model, to separate the memory layer from this one.
+4. The prose rewrite — abstract, introduction, threats, conclusion — is the
+   authors'.
