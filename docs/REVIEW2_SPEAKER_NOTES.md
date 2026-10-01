@@ -1,6 +1,8 @@
 # MemGate — Review 2 speaker's guide
 
 **Companion to `MemGate_Capstone_Review2_NMIMS.pptx` (28 slides).**
+The word-for-word script, which is also loaded into the deck's speaker notes,
+is `docs/REVIEW2_SPEECH.md`. Use this guide for background and the question bank.
 Simar Singh Khanuja & Yash Ramchandani · SVKM's NMIMS, Indore Campus
 
 This document has three parts:
@@ -746,10 +748,9 @@ results are committed, and each slide names the file it came from."
 **On screen.** Gantt: filled bars complete, hollow bars pending, four
 milestones.
 
-**Say.** "Filled bars are done. The critical path to the final review is the
-full end-task run — the pipeline is built and validated, what it needs is
-machine time. Then abstractive compression and LongMemEval in October, online
-learning in November, and the final report in December."
+**Say.** "Filled bars are done — every scoped track closed in September. We
+are at Review 2 now. Before the final review in the first week of November,
+what remains is a scorer that transfers across corpora, and the final report."
 
 ---
 

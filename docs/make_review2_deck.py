@@ -8,8 +8,10 @@ for the same reason the dashboard is: a slide with a hand-typed number goes
 stale the moment an experiment is re-run, and nobody notices until a panel
 does. Figures are the committed PNGs from `make_figures.py`.
 
-Deck geometry, type and colour match `MemGate_Capstone_Review1_NMIMS_v3.pptx`
-so the two decks read as one series.
+The deck is built on `MemGate_Capstone_Review1_NMIMS_v3.pptx` itself: its slides
+are dropped and its slide master -- the NMIMS template, logo card and red bands --
+is kept, so the two decks share one format. Titles, type and colour follow the
+Review 1 slides.
 """
 import csv
 import os
@@ -26,6 +28,7 @@ FIGS = os.path.join(RESULTS, "figures")
 # Project root, alongside MemGate_Capstone_Review1_NMIMS_v3.pptx -- both decks
 # live in one place. The generator, notes and progress report stay in docs/.
 OUT = os.path.join(ROOT, "MemGate_Capstone_Review2_NMIMS.pptx")
+TEMPLATE = os.path.join(ROOT, "MemGate_Capstone_Review1_NMIMS_v3.pptx")
 
 # --- house style, taken from the Review 1 deck -----------------------------
 FONT = "Times New Roman"
@@ -37,6 +40,10 @@ RULE = RGBColor(0xCC, 0xCC, 0xCC)
 BAND = RGBColor(0xF2, 0xF2, 0xF0)
 W, H = 20.0, 11.25                            # inches
 L, CW = 0.9, 18.2                             # content left / width
+# The NMIMS master paints a red band across the top (to ~0.9in), a logo card in
+# the top-left corner (to ~2.95in across, ~2.3in down) and a red band along the
+# bottom (from ~11.05in). Slide content stays clear of all three.
+LOGO_R, BOTTOM = 2.95, 11.0
 
 
 def load(name, casts=()):
@@ -116,9 +123,14 @@ def pnum(p):
 
 
 # --- slide primitives ------------------------------------------------------
-prs = Presentation()
-prs.slide_width, prs.slide_height = Inches(W), Inches(H)
-BLANK = prs.slide_layouts[6]
+prs = Presentation(TEMPLATE)
+assert (prs.slide_width, prs.slide_height) == (Inches(W), Inches(H))
+# Drop Review 1's slides, keep its master; unreferenced slide parts are not saved.
+_ids = prs.slides._sldIdLst
+for _sid in list(_ids):
+    prs.part.drop_rel(_sid.rId)
+    _ids.remove(_sid)
+BLANK = next(l for l in prs.slide_layouts if l.name == "Blank")
 
 
 def slide():
@@ -144,19 +156,22 @@ def run(p, text, size=23, bold=False, color=INK, italic=False):
 
 
 def head(sl, title, kicker=None):
-    tb, tf = textbox(sl, L, 0.62, CW, 1.35)
+    """Review 1 title: centred, 42pt bold, between the red band and the logo card."""
+    tb, tf = textbox(sl, LOGO_R + 0.15, 0.98, W - 2 * (LOGO_R + 0.15), 0.85)
+    tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+    tf.margin_top = tf.margin_bottom = 0
     p = tf.paragraphs[0]
-    run(p, title, size=42, bold=True, color=INK_TITLE)
-    ln = sl.shapes.add_shape(1, Inches(L), Inches(1.92), Inches(CW), Emu(9525 * 2))
-    ln.fill.solid()
-    ln.fill.fore_color.rgb = ACCENT
-    ln.line.fill.background()
-    ln.shadow.inherit = False
+    p.alignment = PP_ALIGN.CENTER
+    run(p, title, size=42 if len(title) <= 44 else 36, bold=True, color=INK_TITLE)
     if kicker:
-        tb2, tf2 = textbox(sl, L, 1.99, CW, 0.6)
+        # Centred under the title, kept clear of the logo card on the left.
+        size = 18 if len(kicker) <= 120 else 16
+        tb2, tf2 = textbox(sl, LOGO_R + 0.15, 1.86, W - 2 * (LOGO_R + 0.15), 0.8)
+        tf2.margin_top = tf2.margin_bottom = 0
         p2 = tf2.paragraphs[0]
-        run(p2, kicker, size=19, color=MUTED, italic=True)
-    return 2.75 if kicker else 2.42
+        p2.alignment = PP_ALIGN.CENTER
+        run(p2, kicker, size=size, color=MUTED, italic=True)
+    return 2.75 if kicker else 2.5
 
 
 def bullets(sl, items, top, size=23, left=L, width=CW, gap=10, line=1.05):
@@ -276,25 +291,21 @@ def footer(sl, text):
 # 1 — title
 # =========================================================================
 sl = slide()
-bar = sl.shapes.add_shape(1, Inches(L), Inches(3.05), Inches(2.4), Emu(9525 * 4))
-bar.fill.solid(); bar.fill.fore_color.rgb = ACCENT
-bar.line.fill.background(); bar.shadow.inherit = False
-tb, tf = textbox(sl, L, 3.35, 16.5, 5.2)
-p = tf.paragraphs[0]
-run(p, "MemGate", size=60, bold=True, color=INK_TITLE)
-p = tf.add_paragraph(); p.space_before = Pt(6)
-run(p, "What to keep, what to forget", size=40, color=INK)
-p = tf.add_paragraph(); p.space_before = Pt(14)
+tb, tf = textbox(sl, 1.9, 2.55, W - 3.8, 7.6)
+p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
+run(p, "MemGate: What to Keep, What to Forget", size=44, bold=True, color=INK)
+p = tf.add_paragraph(); p.alignment = PP_ALIGN.CENTER; p.space_before = Pt(14)
 run(p, "A measured study of the memory decision policy for long-running LLM agents,"
-       " under a bounded store", size=25, color=MUTED, italic=True)
-p = tf.add_paragraph(); p.space_before = Pt(34)
-run(p, "Simar Singh Khanuja", size=26); run(p, " — 70562200088", size=26, color=MUTED)
-p = tf.add_paragraph()
-run(p, "Yash Ramchandani", size=26); run(p, " — 70562300097", size=26, color=MUTED)
-p = tf.add_paragraph(); p.space_before = Pt(20)
-run(p, "SVKM’s NMIMS, Indore Campus", size=24, color=MUTED)
-p = tf.add_paragraph()
-run(p, "Capstone Project  ·  Progress review, September 2026", size=24, color=MUTED)
+       " under a bounded store", size=26, color=MUTED, italic=True)
+p = tf.add_paragraph(); p.alignment = PP_ALIGN.CENTER; p.space_before = Pt(40)
+run(p, "Simar Singh Khanuja - 70562200088", size=32)
+p = tf.add_paragraph(); p.alignment = PP_ALIGN.CENTER
+run(p, "Yash Ramchandani - 70562300097", size=32)
+p = tf.add_paragraph(); p.alignment = PP_ALIGN.CENTER; p.space_before = Pt(30)
+r = run(p, "SVKM’s NMIMS, Indore Campus", size=32, bold=True, color=ACCENT)
+r.font.name = "Calibri"
+p = tf.add_paragraph(); p.alignment = PP_ALIGN.CENTER; p.space_before = Pt(10)
+run(p, "Capstone Project  ·  Review 2, October 2026", size=24, color=MUTED)
 
 # =========================================================================
 # 2 — status
@@ -886,7 +897,7 @@ top = head(sl, "Verification and engineering discipline",
            "Each guard exists because the failure it prevents already happened once.")
 table(sl, [
     ["Guard", "What it prevents"],
-    ["61 tests (test_memgate.py)", "Regression across the store, scorers, policies, compressor and harness"],
+    ["68 tests (test_memgate.py)", "Regression across the store, scorers, policies, compressor and harness"],
     ["*3 label-blindness invariants*",
      "*The evaluation leak, re-armed. Routing, eviction and demotion must produce a bit-identical "
      "store when every evaluation label is stripped*"],
@@ -933,8 +944,8 @@ band(sl, "A reviewer can check every number in this deck without a nine-minute b
 # =========================================================================
 sl = slide()
 top = head(sl, "Timeline")
-months = ["Jul ’26", "Aug ’26", "Sep ’26", "Oct ’26", "Nov ’26", "Dec ’26"]
-gx, gy, gw, rowh = L + 6.2, top + 0.35, 11.6, 0.60
+months = ["Jul ’26", "Aug ’26", "Sep ’26", "Oct ’26", "Nov ’26"]
+gx, gy, gw, rowh = L + 6.2, top + 0.2, 11.6, 0.52
 colw = gw / len(months)
 for i, m in enumerate(months):
     b = sl.shapes.add_shape(5, Inches(gx + i * colw), Inches(gy), Inches(colw - 0.06), Inches(0.55))
@@ -942,6 +953,7 @@ for i, m in enumerate(months):
     b.line.color.rgb = RULE; b.shadow.inherit = False
     p = b.text_frame.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
     run(p, m, size=17, color=MUTED)
+# (label, start, duration, done) in months from 1 July; 3.0 = 1 October.
 tasks = [
     ("Literature review, problem finalisation", 0, 1.0, True),
     ("System design and harness", 0.3, 1.2, True),
@@ -949,12 +961,12 @@ tasks = [
     ("Ablation study", 1.3, 0.5, True),
     ("Storage budget, significance, scaling", 1.5, 0.7, True),
     ("P2 judge, byte accounting, learned scorer", 1.8, 0.6, True),
-    ("Full end-task run (715 questions)", 2.3, 0.8, True),
-    ("LongMemEval + the scorer-transfer finding", 2.6, 0.9, True),
-    ("IEEE paper: compiled, cut to 6 pages", 2.8, 0.6, True),
-    ("Abstractive compression to all ten conversations", 3.4, 1.0, False),
-    ("Online learning of the eviction policy", 4.0, 1.2, False),
-    ("Final report, documentation, defence", 4.8, 1.2, False),
+    ("Full end-task run (715 questions)", 2.2, 0.5, True),
+    ("LongMemEval + the scorer-transfer finding", 2.4, 0.6, True),
+    ("Abstractive compression · online learning", 2.6, 0.4, True),
+    ("IEEE paper: compiled, cut to 6 pages", 2.6, 0.4, True),
+    ("A scorer that transfers across corpora", 3.05, 0.65, False),
+    ("Final report and defence preparation", 3.3, 0.8, False),
 ]
 for i, (label, start, dur, done) in enumerate(tasks):
     y = gy + 0.70 + i * rowh
@@ -967,15 +979,16 @@ for i, (label, start, dur, done) in enumerate(tasks):
     bar.fill.fore_color.rgb = ACCENT if done else RGBColor(0xDD, 0xDD, 0xDA)
     bar.line.fill.background(); bar.shadow.inherit = False
 y_end = gy + 0.70 + len(tasks) * rowh
-for label, x in (("Review 1 · Jul", 0.15), ("This review · Sep", 2.15),
-                 ("Review 2 · Oct", 3.35), ("Final · Dec", 5.15)):
-    tb, tf = textbox(sl, gx + x * colw - 1.0, y_end + 0.05, 2.0, 0.34)
+for label, x in (("Review 1 · late Jul", 0.8), ("Review 2 · Oct (now)", 3.05),
+                 ("Final review · Nov wk 1", 4.15)):
+    tb, tf = textbox(sl, gx + x * colw - 1.5, y_end + 0.05, 3.0, 0.34)
     p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
     run(p, "● " + label, size=14, color=ACCENT)
-caption(sl, "Filled bars are complete. The critical path closed in September: the end-task run, "
-            "LongMemEval, and a compiled paper. What remains is a scorer that transfers across "
-            "corpora — which LongMemEval turned from a nice-to-have into the live question.",
-        H - 0.95, size=19)
+caption(sl, "Filled bars are complete: every scoped track closed in September. Between now and "
+            "the final review in the first week of November, what remains is a scorer that "
+            "transfers across corpora — which LongMemEval made the live question — and the "
+            "final report.",
+        y_end + 0.5, size=18)
 
 # =========================================================================
 # 23 — limitations and remaining work
@@ -1086,18 +1099,15 @@ caption(sl, "Author lists, venues and years were each verified against source pa
 # 26 — thank you
 # =========================================================================
 sl = slide()
-bar = sl.shapes.add_shape(1, Inches(L), Inches(4.3), Inches(2.4), Emu(9525 * 4))
-bar.fill.solid(); bar.fill.fore_color.rgb = ACCENT
-bar.line.fill.background(); bar.shadow.inherit = False
-tb, tf = textbox(sl, L, 4.6, 16.0, 3.4)
-p = tf.paragraphs[0]
-run(p, "Thank you", size=54, bold=True, color=INK_TITLE)
-p = tf.add_paragraph(); p.space_before = Pt(16)
+tb, tf = textbox(sl, 1.9, 3.9, W - 3.8, 4.0)
+p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
+run(p, "Thank You", size=54, bold=True, color=INK_TITLE)
+p = tf.add_paragraph(); p.alignment = PP_ALIGN.CENTER; p.space_before = Pt(16)
 run(p, "Questions welcome — including on the results that did not work.", size=27, color=MUTED)
-p = tf.add_paragraph(); p.space_before = Pt(26)
+p = tf.add_paragraph(); p.alignment = PP_ALIGN.CENTER; p.space_before = Pt(26)
 run(p, "Simar Singh Khanuja  ·  Yash Ramchandani", size=24)
-p = tf.add_paragraph()
-run(p, "SVKM’s NMIMS, Indore Campus", size=24, color=MUTED)
+p = tf.add_paragraph(); p.alignment = PP_ALIGN.CENTER
+run(p, "SVKM’s NMIMS, Indore Campus", size=24, color=ACCENT)
 
 # =========================================================================
 # B1 — backup: full storage sweep
@@ -1114,7 +1124,10 @@ for r in STORAGE:
                  f"{float(r['answer_recall']) * 100:.1f}%",
                  f"{float(r['stored_tokens']):,.0f}",
                  f"{float(r['avg_context_tokens']):,.0f}"])
-table(sl, rows, top, size=13, col_w=[2.0, 5.4, 3.2, 3.0, 2.6, 2.8], height=H - top - 0.5)
+shp = table(sl, rows, top, size=11, col_w=[2.0, 5.4, 3.2, 3.0, 2.6, 2.8], height=BOTTOM - top - 0.2)
+for _row in shp.table.rows:
+    for _c in _row.cells:
+        _c.margin_top = _c.margin_bottom = 0
 
 # =========================================================================
 # B2 — backup: repository
@@ -1153,12 +1166,40 @@ layout = """Capstone Project/
 for i, line in enumerate(layout.split("\n")):
     p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
     p.line_spacing = 1.0
-    r = run(p, line, size=16, color=INK if not line.strip().startswith(("run_", "test_", "make_", "diagnose")) else MUTED)
+    r = run(p, line, size=14, color=INK if not line.strip().startswith(("run_", "test_", "make_", "diagnose")) else MUTED)
     r.font.name = "Consolas"
 caption(sl, "Not committed, by design: the LoCoMo benchmark (2.7 MB) and the model weights "
             "(~1 GB). Both are reproducible — memgate/README.md gives the exact fetch commands. "
             "The results CSVs are committed, so every number here is checkable without a "
             "nine-minute benchmark run.", H - 1.5, size=17)
+
+# --- speaker notes: one section per slide from docs/REVIEW2_SPEECH.md ---------
+def load_speech(path):
+    """{slide number: plain-text script} from the '## Slide N — ...' sections."""
+    import re
+    notes, cur = {}, None
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            m = re.match(r"## Slide (\d+)\b", line)
+            if m:
+                cur = int(m.group(1)); notes[cur] = []
+            elif line.startswith("#") or line.startswith("---"):
+                cur = None
+            elif cur is not None:
+                notes[cur].append(line.rstrip("\n"))
+    out = {}
+    for n, lines in notes.items():
+        paras = "\n".join(lines).strip().split("\n\n")
+        out[n] = "\n\n".join(" ".join(p.split()).replace("**", "").replace("*", "")
+                               for p in paras)
+    return out
+
+
+SPEECH = load_speech(os.path.join(ROOT, "docs", "REVIEW2_SPEECH.md"))
+for n, sl in enumerate(prs.slides, 1):
+    if n in SPEECH:
+        sl.notes_slide.notes_text_frame.text = SPEECH[n]
+assert set(SPEECH) == set(range(1, len(prs.slides) + 1)), "speech and deck disagree on slides"
 
 prs.save(OUT)
 print(f"wrote {OUT}")
