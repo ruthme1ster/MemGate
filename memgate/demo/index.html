@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MemGate · live memory</title>
+<style>
+  :root {
+    --ink: #1a1a1a; --muted: #5a5a5a; --faint: #8a8a8a; --line: #e2e2df;
+    --bg: #f6f6f4; --card: #ffffff; --accent: #c1272d; --accent-soft: #fbeaea;
+    --t1: #34617c; --t1-soft: #e7eef5; --t2: #8a6d1f; --t2-soft: #f7f0dc;
+    --t3: #2e6b4a; --t3-soft: #e7f2eb; --drop: #9a1f24;
+    font-family: -apple-system, "Segoe UI", Calibri, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-size: 15px; }
+  header {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 10px 20px; background: var(--card); border-bottom: 3px solid var(--accent);
+  }
+  header h1 { font: 700 22px/1.1 "Times New Roman", serif; margin: 0; }
+  header h1 span { color: var(--accent); }
+  .ctl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  select, input[type=number], button {
+    font: inherit; border: 1px solid #cfcfca; border-radius: 6px; padding: 6px 10px;
+    background: #fff; color: var(--ink);
+  }
+  input[type=number] { width: 80px; }
+  button { cursor: pointer; font-weight: 600; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  .info { margin-left: auto; color: var(--faint); font-size: 12px; text-align: right; }
+
+  main { display: grid; grid-template-columns: minmax(300px, 25%) 1fr; gap: 14px; padding: 14px 20px; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+  .panel h2 { font-size: 13px; letter-spacing: .06em; text-transform: uppercase;
+              color: var(--muted); margin: 0; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+
+  /* chat */
+  #chat { display: flex; flex-direction: column; height: calc(100vh - 92px); }
+  #msgs { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .msg { padding: 8px 11px; border-radius: 10px; max-width: 92%; line-height: 1.35; }
+  .msg.user { align-self: flex-end; background: var(--accent); color: #fff; }
+  .msg.assistant { align-self: flex-start; background: #efefec; }
+  .msg.sys { align-self: center; color: var(--faint); font-size: 12px; background: none; }
+  #form { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--line); }
+  #form input { flex: 1; font: inherit; padding: 9px 11px; border: 1px solid #cfcfca; border-radius: 6px; }
+
+  /* right side */
+  #right { display: grid; grid-template-rows: auto 1fr auto; gap: 14px; height: calc(100vh - 92px); min-width: 0; }
+  #stats { display: flex; gap: 22px; flex-wrap: wrap; padding: 10px 14px; align-items: baseline; }
+  .stat b { font-size: 22px; font-variant-numeric: tabular-nums; }
+  .stat span { color: var(--muted); font-size: 12px; margin-left: 4px; }
+  .meter { flex: 1; min-width: 160px; height: 10px; background: #eee; border-radius: 5px; overflow: hidden; align-self: center; }
+  .meter i { display: block; height: 100%; background: var(--accent); transition: width .4s; }
+
+  #tiers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; min-height: 0; }
+  .tier { display: flex; flex-direction: column; min-height: 0; }
+  .tier .head { padding: 9px 12px; border-bottom: 1px solid var(--line); }
+  .tier .head b { font-size: 15px; }
+  .tier .head small { display: block; color: var(--muted); font-size: 12px; }
+  .tier .list { overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+  .tier.t1 .head { background: var(--t1-soft); } .tier.t1 .head b { color: var(--t1); }
+  .tier.t2 .head { background: var(--t2-soft); } .tier.t2 .head b { color: var(--t2); }
+  .tier.t3 .head { background: var(--t3-soft); } .tier.t3 .head b { color: var(--t3); }
+  .item { border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; font-size: 13.5px; line-height: 1.3; background: #fff; }
+  .item.fresh { animation: flash 1.6s ease-out; }
+  @keyframes flash { from { background: #fff4b8; } to { background: #fff; } }
+  .item.gone { text-decoration: line-through; color: var(--faint); }
+  .item .meta { display: flex; gap: 6px; align-items: center; margin-top: 4px; font-size: 11px; color: var(--muted); }
+  .bar { width: 50px; height: 5px; background: #eee; border-radius: 3px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--accent); }
+  .chip { border-radius: 4px; padding: 0 5px; background: #f0f0ed; }
+  .empty { color: var(--faint); font-size: 13px; padding: 6px; }
+
+  #bottom { display: grid; grid-template-columns: 1.1fr 1fr; gap: 14px; height: 30vh; min-height: 0; }
+  #bottom .panel { display: flex; flex-direction: column; min-height: 0; }
+  .scroll { overflow-y: auto; padding: 8px 12px; flex: 1; }
+  .ev { padding: 5px 0; border-bottom: 1px dashed var(--line); font-size: 13px; line-height: 1.35; }
+  .ev .tag { display: inline-block; min-width: 64px; font-weight: 700; font-size: 11px; text-transform: uppercase; }
+  .ev .q { color: var(--muted); }
+  .tag.t1 { color: var(--t1); } .tag.t2 { color: var(--t2); } .tag.t3 { color: var(--t3); }
+  .tag.drop { color: var(--drop); } .tag.supersede { color: #6b4fa0; }
+  .ctx { font-size: 13px; padding: 4px 0; border-bottom: 1px dashed var(--line); }
+  .ctx .tier-tag { font-weight: 700; font-size: 11px; margin-right: 6px; }
+
+  /* benchmark drawer */
+  #bench { position: fixed; inset: 60px 20px auto auto; width: min(720px, calc(100vw - 40px));
+           background: #fff; border: 1px solid var(--line); border-radius: 10px;
+           box-shadow: 0 12px 40px rgba(0,0,0,.18); z-index: 10; }
+  #bench pre { margin: 0; padding: 12px 14px; max-height: 50vh; overflow: auto; font: 13px/1.45 Menlo, Consolas, monospace; background: #fafaf8; }
+  #bench .row { display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  #bench .res { font-size: 18px; padding: 12px 14px; }
+  .ok { color: var(--t3); font-weight: 700; } .bad { color: var(--drop); font-weight: 700; }
+  @media (max-width: 900px) {
+    main { grid-template-columns: 1fr; }
+    #chat, #right { height: auto; }
+    #msgs { max-height: 50vh; }
+    #tiers, #bottom { grid-template-columns: 1fr; height: auto; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Mem<span>Gate</span> · live memory</h1>
+  <div class="ctl">
+    <select id="mode" title="memory policy">
+      <option value="p1">P1 · threshold routing (slide 6)</option>
+      <option value="p1s">P1-S select · forget lowest score first</option>
+      <option value="p1a">P1-A adaptive · demote to a gist</option>
+    </select>
+    <label id="sLabel">store S <input id="S" type="number" min="40" step="10" value="150"></label>
+    <button id="reset">Reset</button>
+    <button id="sample">Load sample chat</button>
+    <button id="benchBtn">Benchmark check</button>
+  </div>
+  <div class="info" id="info"></div>
+</header>
+
+<main>
+  <section class="panel" id="chat">
+    <h2>Chat · the model sees only what MemGate sends</h2>
+    <div id="msgs"></div>
+    <form id="form" autocomplete="off">
+      <input id="text" placeholder="Type a message…">
+      <button class="primary" id="send">Send</button>
+    </form>
+  </section>
+
+  <section id="right">
+    <div class="panel" id="stats"></div>
+    <div id="tiers">
+      <div class="panel tier t1"><div class="head"><b>Tier 1 · short-term</b><small id="t1h">raw recent messages, first in first out</small></div><div class="list" id="t1"></div></div>
+      <div class="panel tier t2"><div class="head"><b>Tier 2 · working</b><small>compressed gists</small></div><div class="list" id="t2"></div></div>
+      <div class="panel tier t3"><div class="head"><b>Tier 3 · long-term</b><small>facts with vectors, retrieved by meaning</small></div><div class="list" id="t3"></div></div>
+    </div>
+    <div id="bottom">
+      <div class="panel"><h2>Decisions · newest first</h2><div class="scroll" id="log"></div></div>
+      <div class="panel"><h2 id="ctxh">Context sent with the last message</h2><div class="scroll" id="ctx"><div class="empty">Send a message to see what MemGate puts in the prompt.</div></div></div>
+    </div>
+  </section>
+</main>
+
+<div id="bench" hidden>
+  <div class="row">
+    <b>LoCoMo benchmark · re-run live</b>
+    <label>S <input id="benchS" type="number" value="4096" step="1024" min="512"></label>
+    <button class="primary" id="benchRun">Run</button>
+    <span id="benchStatus" style="color:var(--muted)"></span>
+    <button id="benchClose" style="margin-left:auto">Close</button>
+  </div>
+  <div class="res" id="benchRes" hidden></div>
+  <pre id="benchOut">Replays all 10 LoCoMo conversations (1,527 questions) through RAG store-all and
+P1-S select, then compares answer recall with results/storage_sweep.csv —
+the file the slides are generated from. About 20 seconds.</pre>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let seen = new Set(), busy = false, lastState = null;
+
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+async function api(path, body) {
+  const r = await fetch(path, body === undefined ? {} :
+    {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+function itemHTML(it, fresh) {
+  const pct = Math.round(it.utility * 100);
+  const showScore = it.tier !== 't1';
+  return `<div class="item ${fresh ? 'fresh' : ''} ${it.superseded ? 'gone' : ''}">${esc(it.text)}
+    <div class="meta">${showScore ? `<span class="bar"><i style="width:${pct}%"></i></span><span>u ${it.utility.toFixed(2)}</span>
+    <span class="chip">${esc(it.label)}</span>` : `<span>#${it.turn}</span>`}
+    <span>${it.tokens} tok</span>${it.superseded ? '<span class="chip">superseded</span>' : ''}</div></div>`;
+}
+
+function render(s) {
+  lastState = s;
+  $('mode').value = s.mode;
+  $('sLabel').style.display = s.mode === 'p1' ? 'none' : '';
+  $('info').innerHTML = `model: ${esc(s.model)}<br>embedder: ${esc(s.backends.embedder)}`;
+  $('t1h').textContent = `raw recent messages, holds the last ${s.short_capacity}`;
+  for (const k of ['t1', 't2', 't3']) {
+    const items = s[k];
+    const why = (k === 't2' && s.mode === 'p1s') ? 'P1-S never compresses: an evicted message is kept whole or forgotten.' : 'empty';
+    $(k).innerHTML = items.length ? items.slice().reverse().map(it => itemHTML(it, !seen.has(it.id))).join('')
+                                  : `<div class="empty">${why}</div>`;
+  }
+  seen = new Set([...s.t1, ...s.t2, ...s.t3].map(i => i.id));
+
+  const cap = s.store_budget;
+  const pct = cap ? Math.min(100, s.stored_tokens / cap * 100) : 0;
+  const c = s.counts;
+  $('stats').innerHTML = `
+    <div class="stat"><b>${s.messages}</b><span>messages</span></div>
+    <div class="stat"><b>${s.stored_tokens}</b><span>tokens stored${cap ? ' of S = ' + cap : ' (no store cap)'}</span></div>
+    ${cap ? `<div class="meter" title="store fill"><i style="width:${pct}%"></i></div>` : ''}
+    <div class="stat"><b>${c.dropped}</b><span>forgotten</span></div>
+    ${s.mode !== 'p1s' ? `<div class="stat"><b>${c.compressed}</b><span>compressed to a gist</span></div>` : ''}
+    <div class="stat" style="color:var(--muted);font-size:12px">${esc(s.mode_label)} · context ${s.context_budget} tokens
+      ${s.mode === 'p1' ? ` · τ_fact ${s.tau_fact}, τ_low ${s.tau_low}` : ''}</div>`;
+
+  const tagFor = {enter: 't1', t3: 't3', t2: 't2', dup: 't3', drop: 'drop', demote: 't2', merge: 't2', supersede: 'supersede'};
+  const label = {enter: 'Tier 1', t3: 'Tier 3', t2: 'Tier 2', dup: 'Tier 3', drop: 'forgot', demote: 'demoted', merge: 'merged', supersede: 'replaced'};
+  $('log').innerHTML = s.log.length ? s.log.slice().reverse().filter(e => e.type !== 'enter').map(e =>
+    `<div class="ev"><span class="tag ${tagFor[e.type]}">${label[e.type]}</span> ${esc(e.msg)}
+      <div class="q">“${esc(e.text.length > 110 ? e.text.slice(0, 110) + '…' : e.text)}”</div></div>`).join('')
+    || '<div class="empty">Nothing has left Tier 1 yet. Decisions happen on eviction.</div>'
+    : '<div class="empty">Nothing yet.</div>';
+}
+
+function addMsg(cls, text) {
+  const d = document.createElement('div');
+  d.className = 'msg ' + cls; d.textContent = text;
+  $('msgs').appendChild(d); $('msgs').scrollTop = 1e9;
+  return d;
+}
+
+function renderCtx(items, tokens, budget) {
+  const name = {t1: 'TIER 1', t2: 'TIER 2', t3: 'TIER 3'};
+  $('ctxh').textContent = `Context sent with the last message · ${tokens} of ${budget} tokens`;
+  $('ctx').innerHTML = items.length ? items.map(it =>
+    `<div class="ctx"><span class="tier-tag tag ${it.tier}">${name[it.tier]}</span>${esc(it.text)}</div>`).join('')
+    : '<div class="empty">Nothing retrieved.</div>';
+}
+
+$('form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const text = $('text').value.trim();
+  if (!text || busy) return;
+  busy = true; $('send').disabled = true; $('text').value = '';
+  addMsg('user', text);
+  const wait = addMsg('assistant', '…');
+  try {
+    const s = await api('/api/chat', {text});
+    wait.textContent = s.reply;
+    renderCtx(s.context, s.context_tokens, s.context_budget);
+    render(s);
+  } catch (err) { wait.textContent = 'Error: ' + err.message; }
+  busy = false; $('send').disabled = false; $('text').focus();
+});
+
+$('reset').onclick = async () => {
+  const s = await api('/api/reset', {mode: $('mode').value, store_budget: +$('S').value || 150});
+  $('msgs').innerHTML = ''; addMsg('sys', 'New conversation · ' + s.mode_label);
+  $('ctx').innerHTML = '<div class="empty">Send a message to see what MemGate puts in the prompt.</div>';
+  seen = new Set(); render(s);
+};
+$('mode').onchange = () => $('reset').onclick();
+
+$('sample').onclick = async () => {
+  const s = await api('/api/sample', {});
+  addMsg('sys', 'Sample conversation loaded (18 messages). Try asking: “When is my report due?”');
+  render(s);
+};
+
+// benchmark drawer
+let benchTimer = null;
+$('benchBtn').onclick = () => { $('bench').hidden = false; };
+$('benchClose').onclick = () => { $('bench').hidden = true; };
+function showBench(b) {
+  if (b.lines.length) $('benchOut').textContent = b.lines.join('\n');
+  $('benchOut').scrollTop = 1e9;
+  $('benchStatus').textContent = b.running ? 'running…' : (b.code === null ? '' : (b.code === 0 ? 'done' : 'finished'));
+  $('benchRun').disabled = b.running;
+  const res = b.lines.filter(l => /live .*committed/.test(l));
+  if (!b.running && res.length) {
+    $('benchRes').hidden = false;
+    $('benchRes').innerHTML = res.map(l => esc(l.trim()).replace('MATCH', '<span class="ok">MATCH</span>')
+      .replace('DIFFERS', '<span class="bad">DIFFERS</span>')).join('<br>') +
+      '<br>' + esc((b.lines.find(l => l.includes('selection over FIFO')) || '').trim());
+  }
+}
+$('benchRun').onclick = async () => {
+  $('benchRes').hidden = true; $('benchOut').textContent = 'starting…';
+  showBench(await api('/api/bench', {store: +$('benchS').value || 4096}));
+  clearInterval(benchTimer);
+  benchTimer = setInterval(async () => {
+    const b = await api('/api/bench');
+    showBench(b);
+    if (!b.running) clearInterval(benchTimer);
+  }, 700);
+};
+
+api('/api/state').then(s => { render(s); addMsg('sys', 'Ready · ' + s.mode_label); $('text').focus(); });
+</script>
+</body>
+</html>
